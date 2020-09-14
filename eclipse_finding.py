@@ -460,7 +460,7 @@ def find_best_n(times, signal, min_n=2, max_n=50, dev_limit=1.8, diagnostic_plot
         best_n = n_range[np.argmax(optimize[limit_1])]
     else:
         best_n = 2
-    
+
     if diagnostic_plot:
         fig, ax = plt.subplots(figsize=[14, 10])
         ax.plot(n_range[[0, -1]], [dev_limit, dev_limit])
@@ -1086,7 +1086,14 @@ def plot_marker_diagnostics(times, signal, signal_s, s_derivs, peaks, ecl_indice
     ax[4].scatter(times[peaks_13], deriv_13s[peaks_13], label='peak marker', c='tab:orange')
     ax[4].scatter(times[peaks_2_neg], deriv_13s[peaks_2_neg], label='outside', c='tab:red')
     ax[4].scatter(times[peaks_2_pos], deriv_13s[peaks_2_pos], label='inside', c='tab:green')
+    ax[4].set_xlabel('time', fontsize=20)
+    ax[0].set_ylabel('signal', fontsize=20)
+    ax[4].set_ylabel('d1 * d3', fontsize=20)
+    # ax[4].tick_params(axis='x', labelsize=14)
     for i in range(5):
+        if i in [1, 2, 3]:
+            ax[i].set_ylabel(fr'$\frac{{d^{i}}}{{dt^{i}}}$ signal', fontsize=20)
+        # ax[i].tick_params(axis='y', labelsize=14)
         ax[i].legend()
     plt.tight_layout()
     plt.subplots_adjust(hspace=0)
@@ -1171,77 +1178,6 @@ def construct_range(t_0, period, domain, p_min=0.1):
     return points, n_range
 
 
-def pattern_test_old(ecl_mid, added_snr, widths, time_frame, ecl_0=None, p_max=None, p_step=None):
-    """Test for the presence of a regular pattern in a set of eclipse midpoints.
-    ecl_mid: measured eclipse positions
-    added_snr: measured eclipse significance levels
-    widths: eclipse widths
-    p_min, p_max, p_step: period range to search and step size.
-    The absolute lower limit is 0.001 (assumed to be in days).
-    """
-    # set the maximum period and reference eclipse, if not given
-    n_ecl = len(ecl_mid)
-    ecl_i = np.arange(n_ecl)
-    if (p_max is None) | (ecl_0 is None):
-        snr_ref = max(np.mean(added_snr), 0.5 * np.max(added_snr))
-        high_snr = (added_snr > snr_ref)
-        if ecl_0 is None:
-            ecl_0 = ecl_i[high_snr][0]
-        if (p_max is None) & (len(ecl_mid[high_snr]) > 1):
-            p_max = 3 * np.median(np.diff(ecl_mid[high_snr]))
-        elif p_max is None:
-            p_max = 3 * np.median(np.diff(ecl_mid))
-    if (p_max == 0):
-        p_max = 3 * np.median(np.diff(ecl_mid))
-    p_max = max(0.002, p_max)
-    t_0 = ecl_mid[ecl_0]
-    # set the minimum period if not given
-    p_min = 0.95 * np.min(np.abs(t_0 - ecl_mid[ecl_i != ecl_0]))
-    if (p_max < p_min):
-        p_min = 0.01 * p_max
-    p_min = max(0.001, p_min)
-    # set the period step if not given
-    if p_step is None:
-        p_step = 1 / (25 * np.ptp(ecl_mid))
-    p_step = min(p_step, 0.01 * p_max)
-    # make the period grid and the k-dimensional lookup tree
-    periods = np.arange(p_min, p_max, p_step)
-    ecl_tree = sp.spatial.cKDTree(ecl_mid.reshape(-1, 1))
-    # fill the goodness of fit array
-    gof = np.zeros([len(periods)])
-    for i, p in enumerate(periods):
-        pattern, n_range = construct_range(t_0, p, time_frame)
-        if (len(pattern) != 0):
-            # get nearest neighbour (distance and index) in ecl_mid for each pattern time
-            d_nn, i_nn = ecl_tree.query(pattern.reshape(-1, 1), k=1)
-            # the (indices of the) set of data points with an associated pattern period
-            ecl_included = np.unique(i_nn)
-            # determine which of the nearest neighbours is the closest neighbour
-            n_range_0 = n_range - n_range[0]  # range starting at zero
-            i_cn = [n_range_0[i_nn == i][np.argmin(d_nn[i_nn == i])] for i in ecl_included]
-            # calculate which closest neighbours are less than the ecl width away
-            cn_w = (d_nn[i_cn] / widths[ecl_included] < 0.5)
-            # calculate the goodness of fit
-            gof[i] = len(added_snr[ecl_included][cn_w]) / len(pattern) * np.sum(added_snr[ecl_included][cn_w])
-            gof[i] -= np.sum(d_nn[i_cn][cn_w])
-        else:
-            gof[i] = 0
-    return periods, gof, ecl_tree
-
-
-def extract_pattern_old(ecl_mid, widths, ecl_0, ecl_period, time_frame, ecl_tree):
-    """Get the indices of the eclipses matching the pattern."""
-    pattern, n_range = construct_range(ecl_mid[ecl_0], ecl_period, time_frame)
-    d_nn, i_nn = ecl_tree.query(pattern.reshape(-1, 1), k=1)
-    ecl_included = np.unique(i_nn)
-    # determine which of the nearest neighbours is the closest neighbour
-    n_range_0 = n_range - n_range[0]  # range starting at zero
-    i_cn = [n_range_0[i_nn == i][np.argmin(d_nn[i_nn == i])] for i in ecl_included]
-    # calculate which closest neighbours are less than the ecl width away and adjust ecl_included
-    cn_w = (d_nn[i_cn] / widths[ecl_included] < 0.5)
-    return ecl_included[cn_w]
-
-
 @nb.jit(nopython=True)
 def pattern_test(ecl_mid, added_snr, widths, time_frame, ecl_0=None, p_max=None, p_step=None):
     """Test for the presence of a regular pattern in a set of eclipse midpoints.
@@ -1274,7 +1210,7 @@ def pattern_test(ecl_mid, added_snr, widths, time_frame, ecl_0=None, p_max=None,
     p_min = max(0.001, p_min)
     # set the period step if not given
     if p_step is None:
-        p_step = 1 / (25 * np.ptp(ecl_mid))
+        p_step = 1 / (100 * np.ptp(ecl_mid))
     p_step = min(p_step, 0.01 * p_max)
     # make the period grid and the k-dimensional lookup tree
     periods = np.arange(p_min, p_max, p_step)
@@ -1654,10 +1590,10 @@ def plot_period_diagnostics(times, signal, signal_s, ecl_indices, ecl_mid, width
     w_ax.spines['top'].set_position(('axes', 1.15))
     w_ax.scatter(widths, phases, c='tab:orange', marker='X', label='eclipse widths')
     d_ax.scatter(depths, phases, c='tab:green', marker='P', label='eclipse depths')
-    w_ax.set_xlabel('eclipse width (units of time)')
-    d_ax.set_xlabel('eclipse depth (units of signal)')
-    ax[0].set_xlabel('time')
-    ax[0].set_ylabel('phase')
+    w_ax.set_xlabel('eclipse width (units of time)', fontsize=14)
+    d_ax.set_xlabel('eclipse depth (units of signal)', fontsize=14)
+    ax[0].set_xlabel('time', fontsize=20)
+    ax[0].set_ylabel('phase', fontsize=20)
     if period is not None:
         ax[0].legend(title=f'period = {period:1.4f}')
     else:
@@ -1672,8 +1608,8 @@ def plot_period_diagnostics(times, signal, signal_s, ecl_indices, ecl_mid, width
     ax[1].scatter(ecl_mid[sec], np.full_like(ecl_mid[sec], height_2), c='tab:purple', marker='s', label='secondaries')
     ax[1].scatter(ecl_mid[tert], np.full_like(ecl_mid[tert], height_2), c='tab:pink', marker='x',
                   label='tertiaries/other')
-    ax[1].set_xlabel('time')
-    ax[1].set_ylabel('signal')
+    ax[1].set_xlabel('time', fontsize=20)
+    ax[1].set_ylabel('signal', fontsize=20)
     ax[1].legend()
     plt.tight_layout()
     plt.subplots_adjust(hspace=0)

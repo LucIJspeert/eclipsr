@@ -4,19 +4,16 @@ do various miscellaneous things with them (or on arrays in general).
 Code written by: Luc IJspeert
 """
 
-import math as m
 import numpy as np
 import scipy as sp
 import scipy.signal
-import scipy.spatial
-import scipy.special
 import numba as nb
 import matplotlib.pyplot as plt
 
 import fitshandler as fh
 
 
-@nb.jit(nopython=True)
+@nb.njit(cache=True)
 def cut_eclipses(times, eclipses):
     """Returns a boolean mask covering up the eclipses.
     Give the eclipse times as a series of two points in time.
@@ -30,7 +27,7 @@ def cut_eclipses(times, eclipses):
     return mask
 
 
-@nb.jit(nopython=True)
+@nb.njit(cache=True)
 def mask_eclipses(times, eclipses):
     """Returns a boolean mask covering up the eclipses.
     Give the eclipse indices as a series of two indices per eclipse.
@@ -48,7 +45,7 @@ def rescale_tess(times, signal, bjd_ref=2457000.0, diagnostic_plot=False):
     times are in TESS bjd by default, but a different bjd_ref can be given to use
     a different time reference point.
     """
-    # the 0.5 offset comes from testing, and the fact that no exact JD were found (just calendar days)
+    # the 0.5 offset comes from test results, and the fact that no exact JD were found (just calendar days)
     jd_sectors = np.loadtxt('tess_sectors.dat', usecols=(2, 3)) - bjd_ref
     signal_copy = np.copy(signal)
     mask_sect = [(times > sect[0]) & (times < sect[1]) for sect in jd_sectors]
@@ -62,11 +59,7 @@ def rescale_tess(times, signal, bjd_ref=2457000.0, diagnostic_plot=False):
             masked_s = signal[mask]
             averages[i] = np.average(masked_s)
             low[i] = np.average(masked_s[masked_s < averages[i]])
-            # low[i] = np.median(masked_s[masked_s < low[i]])
-            # low[i] = np.median(masked_s[masked_s < low[i]])
             high[i] = np.average(masked_s[masked_s > averages[i]])
-            # high[i] = np.median(masked_s[masked_s > high[i]])
-            # high[i] = np.median(masked_s[masked_s > high[i]])
             threshold[i] = np.average(masked_s[masked_s > high[i]])
             threshold[i] = np.average(masked_s[masked_s > threshold[i]])
     
@@ -83,28 +76,35 @@ def rescale_tess(times, signal, bjd_ref=2457000.0, diagnostic_plot=False):
             signal_copy[mask] = (signal[mask] - averages[i]) / difference[i] * min_diff + averages[i]
             thr_mask[mask] = (signal[mask] < threshold[i])
     if diagnostic_plot:
-        fig, ax = plt.subplots(nrows=2, ncols=1, sharex=True, figsize=[14, 10])
-        ax[0].plot(times, signal)
-        ax[1].plot(times, signal_copy)
-        for i, sect in enumerate(jd_sectors):
-            if np.any(mask_sect[i]):
-                ax[0].plot([sect[0], sect[1]], [averages[i], averages[i]], c='tab:orange')
-                ax[0].plot([sect[0], sect[1]], [low[i], low[i]], c='tab:red')
-                ax[0].plot([sect[0], sect[1]], [high[i], high[i]], c='tab:red')
-                ax[0].plot([sect[0], sect[1]], [threshold[i], threshold[i]], c='tab:purple')
-                avg = np.average(signal_copy[mask_sect[i]])
-                l = np.average(signal_copy[mask_sect[i]][signal_copy[mask_sect[i]] < avg])
-                h = np.average(signal_copy[mask_sect[i]][signal_copy[mask_sect[i]] > avg])
-                ax[1].plot([sect[0], sect[1]], [avg, avg], c='tab:orange')
-                ax[1].plot([sect[0], sect[1]], [l, l], c='tab:red')
-                ax[1].plot([sect[0], sect[1]], [h, h], c='tab:red')
-        plt.tight_layout()
-        plt.subplots_adjust(hspace=0)
-        plt.show()
-    return signal_copy, thr_mask
+        return signal_copy, thr_mask, averages, low, high, threshold, mask_sect, jd_sectors
+    else:
+        return signal_copy, thr_mask
 
 
-@nb.jit(nopython=True)
+def rescale_tess_dplot(times, signal, signal_copy, averages, low, high, threshold, mask_sect, jd_sectors):
+    """Diagnostic plot for rescale_tess."""
+    fig, ax = plt.subplots(nrows=2, ncols=1, sharex=True, figsize=[14, 10])
+    ax[0].plot(times, signal)
+    ax[1].plot(times, signal_copy)
+    for i, sect in enumerate(jd_sectors):
+        if np.any(mask_sect[i]):
+            ax[0].plot([sect[0], sect[1]], [averages[i], averages[i]], c='tab:orange')
+            ax[0].plot([sect[0], sect[1]], [low[i], low[i]], c='tab:red')
+            ax[0].plot([sect[0], sect[1]], [high[i], high[i]], c='tab:red')
+            ax[0].plot([sect[0], sect[1]], [threshold[i], threshold[i]], c='tab:purple')
+            avg = np.average(signal_copy[mask_sect[i]])
+            l = np.average(signal_copy[mask_sect[i]][signal_copy[mask_sect[i]] < avg])
+            h = np.average(signal_copy[mask_sect[i]][signal_copy[mask_sect[i]] > avg])
+            ax[1].plot([sect[0], sect[1]], [avg, avg], c='tab:orange')
+            ax[1].plot([sect[0], sect[1]], [l, l], c='tab:red')
+            ax[1].plot([sect[0], sect[1]], [h, h], c='tab:red')
+    plt.tight_layout()
+    plt.subplots_adjust(hspace=0)
+    plt.show()
+    return
+
+
+@nb.njit(cache=True)
 def fold_time_series(times, period, zero):
     """Fold the given time series over the orbital period to go to function of phase.
     Returns phase array for all timestamps using the provided reference zero point.
@@ -114,7 +114,7 @@ def fold_time_series(times, period, zero):
     return phases
 
 
-@nb.jit(nopython=True)
+@nb.njit(cache=True)
 def mark_gaps(a):
     """Mark the two points at either side of gaps in a somewhat-uniformly separated
     series of monotonically ascending numbers (e.g. timestamps).
@@ -133,16 +133,7 @@ def mark_gaps(a):
     return gaps, gap_width
 
 
-def multiple_gaps(gaps):
-    """Mark the points that are on both sides next to a gap."""
-    multi_gap = np.zeros([len(gaps)], dtype=bool)
-    multi_gap[gaps] = True
-    multi_gap[:-1] &= gaps[1:]
-    multi_gap[1:] &= gaps[:-1]
-    return multi_gap
-
-
-@nb.jit(nopython=True)
+@nb.njit(cache=True)
 def repeat_points_internals(t, n):
     """Makes an array of the number of repetitions to be made in an array (a) before diff
     or convolve is used on it, taking into account gaps in the data.
@@ -195,7 +186,7 @@ def repeat_points_internals(t, n):
     return repetitions, repetition_mask
 
 
-@nb.jit(nopython=True)
+@nb.njit(cache=True)
 def smooth(a, n, mask=None):
     """Similar in function to numpy.convolve, but uses a flat kernel (average).
     Can also apply a mask to the output arrays, for if they had repeats in them.
@@ -229,7 +220,7 @@ def smooth(a, n, mask=None):
     return a_smooth
 
 
-@nb.jit(nopython=True)
+@nb.njit(cache=True)
 def smooth_diff(a, n, mask=None):
     """Similar in function to numpy.diff, but also first smooths the input array
     by averaging over n consecutive points.
@@ -245,7 +236,7 @@ def smooth_diff(a, n, mask=None):
     return diff, a_smooth
 
 
-@nb.jit(nopython=True)
+@nb.njit(cache=True)
 def smooth_derivative(a, dt, n, mask=None):
     """Similar in function to numpy.diff, but also first smooths the input array
     by averaging over n consecutive points and divides by the time-diff, so it
@@ -259,7 +250,7 @@ def smooth_derivative(a, dt, n, mask=None):
     return d_dt, a_smooth
 
 
-@nb.jit(nopython=True)
+@nb.njit(cache=True)
 def prepare_derivatives(times, signal, n_kernel):
     """Calculate various derivatives of the light curve for the purpose of eclipse finding.
     Retruns all the raw and smooth arrays in vertically stacked groups
@@ -287,7 +278,7 @@ def prepare_derivatives(times, signal, n_kernel):
     return signal_s, r_derivs, s_derivs
 
 
-def find_best_n_3(times, signal, min_n=2, max_n=50, dev_limit=0.1, diagnostic_plot=False):
+def find_best_n(times, signal, min_n=2, max_n=50, diagnostic_plot=False):
     """Confirms whether eclipses are found in the light curve or not, and
     serves to find the best number of points for smoothing the signal
     in the further analysis (n_kernel).
@@ -295,14 +286,14 @@ def find_best_n_3(times, signal, min_n=2, max_n=50, dev_limit=0.1, diagnostic_pl
     On the bright side, similar data sets will have similar optimal n_kernel
     (mainly driven by the amount of points covering eclipse in/egress).
     """
-    dev_limit = 1
-    # todo: need better function... some just need a bit more
+    # todo: need better function... but this one seems to work okay
     if (min_n < 2):
         print('min_n = 2 is really the minimum.')
         min_n = 2
     n_range = np.arange(min_n, max_n + max_n % 2)
-    roughness = np.zeros([len(n_range)])
     deviation = np.zeros([len(n_range)])
+    sine_like = np.zeros([len(n_range)], dtype=bool)
+    optimize = np.zeros([len(n_range)])
     # normalise the signal
     norm_signal = (signal - np.average(signal))
     norm_signal /= np.median(np.abs(norm_signal))
@@ -312,106 +303,18 @@ def find_best_n_3(times, signal, min_n=2, max_n=50, dev_limit=0.1, diagnostic_pl
     diff_1 = np.diff(signal_e)[rep_mask[:-1]]
     diff_t = np.diff(np.append(times, 2 * times[-1] - times[-2]))
     deriv_1 = diff_1 / diff_t
-    med_deriv = np.median(np.abs(deriv_1))
     norm_deriv_1 = (deriv_1 - np.average(deriv_1))
     norm_deriv_1 /= np.std(norm_deriv_1)
-    n_repeats, rep_mask = repeat_points_internals(times, 2)
-    norm_deriv_1e = np.repeat(norm_deriv_1, n_repeats)
-    diff_2 = np.diff(norm_deriv_1e)[rep_mask[:-1]]
-    roughness_0 = np.mean(np.abs(diff_2)**2 / 4)
     # go through values of n to get the best one
     for i, n in enumerate(n_range):
         signal_s, r_derivs, s_derivs = prepare_derivatives(times, norm_signal, n)
         deviation[i] = np.mean((norm_signal - signal_s)**2)
-        norm_deriv_1 = (r_derivs[0] - np.average(r_derivs[0]))
-        norm_deriv_1 /= np.std(norm_deriv_1)
-        n_repeats, rep_mask = repeat_points_internals(times, 2)
-        norm_deriv_1e = np.repeat(norm_deriv_1, n_repeats)
-        diff_2 = np.diff(norm_deriv_1e)[rep_mask[:-1]]
-        roughness[i] = np.mean(np.abs(diff_2)**2 / 4)
-        # signal_s_2, r_derivs_2, s_derivs_2 = prepare_derivatives(times, norm_signal, n + 1)
-        # roughness[i] = np.std(signal_s - signal_s_2) / (med_dt * 24 * 2)
-    # smooth the deviation (even numbers have an unfair disadvantage)
-    deviation[0] = deviation[1]
-    deviation[2::2] = (deviation[1:-1:2] + deviation[3::2]) / 2
-    deviation /= np.min(deviation)
-    roughness /= roughness_0
-    optimize = roughness * deviation
-    # todo: maybe take only values where deviation < 0.2
-    # deviation = deviation - (deviation[0] - 1)
-    check_1 = (deviation < dev_limit)
-    # take points into account up to the maximum noise if this is not at index 0
-    # if np.any(check_1):
-    #     argmax = np.argmax(optimize[check_1])
-    #     if (argmax == 0):
-    #         argmin = np.argmin(optimize[check_1])
-    #     else:
-    #         argmin = np.argmin(optimize[:argmax + 1])
-    # else:
-    #     argmin = 0
-    # best_n = n_range[argmin]
-    check_1 = (deviation < 1.5)
-    check_2 = (roughness < 0.35)
-    if np.any(check_1 & check_2):
-        # first instance where it goes below roughness recuirement
-        best_n = n_range[check_1 & check_2][0]
-    elif np.any(check_1):
-        # last instance where it is below the deviation limit
-        best_n = n_range[check_2][-1]
-    else:
-        best_n = 2
-    
-    if diagnostic_plot:
-        fig, ax = plt.subplots(figsize=[14, 10])
-        if not np.all(check_1):
-            ax.plot(n_range[[0, -1]], [dev_limit, dev_limit])
-        ax.plot(n_range, deviation, label='deviation')
-        ax.plot(n_range, roughness, label='roughness')
-        ax.plot(n_range, optimize, label='optimize')
-        ax.set_xlabel('n_kernel')
-        ax.set_ylabel('statistic')
-        plt.tight_layout()
-        plt.legend(title=f'n={best_n}')
-        plt.show()
-    return best_n
-
-
-def find_best_n(times, signal, min_n=2, max_n=50, dev_limit=1.8, diagnostic_plot=False):
-    """Confirms whether eclipses are found in the light curve or not, and
-    serves to find the best number of points for smoothing the signal
-    in the further analysis (n_kernel).
-    This is a brute force routine, so might be suboptimal to run every time.
-    On the bright side, similar data sets will have similar optimal n_kernel
-    (mainly driven by the amount of points covering eclipse in/egress).
-    """
-    dev_limit = 2.5
-    # todo: need better function... some just need a bit more
-    if (min_n < 2):
-        print('min_n = 2 is really the minimum.')
-        min_n = 2
-    n_range = np.arange(min_n, max_n + max_n % 2)
-    optimize = np.zeros([len(n_range)])
-    deviation = np.zeros([len(n_range)])
-    sine_like = np.zeros([len(n_range)], dtype=bool)
-    # normalise the signal
-    norm_signal = (signal - np.average(signal))
-    norm_signal /= np.median(np.abs(norm_signal))
-    # non-smooth derivative
-    n_repeats, rep_mask = repeat_points_internals(times, 2)
-    signal_e = np.repeat(signal, n_repeats)
-    diff_1 = np.diff(signal_e)[rep_mask[:-1]]
-    diff_t = np.diff(np.append(times, 2 * times[-1] - times[-2]))
-    deriv_1 = diff_1 / diff_t
-    norm_deriv_1 = (deriv_1 - np.average(deriv_1))
-    norm_deriv_1 /= np.std(norm_deriv_1)
-    # go through values of n to get the best one
-    for i, n in enumerate(n_range):
-        signal_s, r_derivs, s_derivs = prepare_derivatives(times, norm_signal, n)
-        ecl_indices, added_snr, flags, sine_like[i] = find_eclipses(times, signal, n)
-        if (len(added_snr) > 0):
-            m_full = np.char.startswith(flags, 'f')  # mask of the full eclipses
-            m_left = np.char.startswith(flags, 'lh')
-            m_right = np.char.startswith(flags, 'rh')
+        peaks, added_snr, slope_sign, sine_like[i] = mark_eclipses(times, signal_s, s_derivs, r_derivs, n)
+        ecl_indices, added_snr, flags = assemble_eclipses(times, norm_signal, signal_s, peaks, added_snr, slope_sign)
+        if (len(flags) > 0):
+            m_full = (flags == 0)  # mask of the full eclipses
+            m_left = (flags == 1)
+            m_right = (flags == 2)
             l_o = ecl_indices[:, 0]  # left outside
             l_i = ecl_indices[:, 1]  # left inside
             r_i = ecl_indices[:, -2]  # right inside
@@ -441,94 +344,50 @@ def find_best_n(times, signal, min_n=2, max_n=50, dev_limit=1.8, diagnostic_plot
                 slope = (slope_right + slope_left) / 2
             norm_factor = np.median(np.abs(r_derivs[0][ecl_mask]))
             optimize[i] = np.max(slope) / norm_factor
-        else:
-            optimize[i] = 0
-        deviation[i] = np.mean((norm_signal - signal_s)**2)
     # smooth the deviation (even numbers have an unfair disadvantage)
     deviation[0] = deviation[1]
     deviation[2::2] = (deviation[1:-1:2] + deviation[3::2]) / 2
     deviation /= np.min(deviation)
-    # todo: maybe take only values where deviation < 0.2
-    # take points into account up to the maximum noise if this is not at index 0
-    limit_1 = (deviation < dev_limit)
+    # if the deviation comes back down, the smoothing goes too far
+    optimize[np.argmax(deviation) + 1:] = 0
+    # if we see sine-like signs, cut off smoothing where it's no longer sine-like
+    first_sl = np.argmax(sine_like)
+    if sine_like[first_sl]:
+        sl_cut = first_sl + np.argmin(sine_like[first_sl:])
+        optimize[sl_cut + 1:] = 0
+    # set two limits for the deviation
+    limit_1 = (deviation < 2.5)  # deviation limit imposed
     limit_2 = (deviation < 100)  # could be set higher still if needed
     if (len(optimize[sine_like & limit_2]) > 2):
-        # best_n = n_range[sine_like & limit_2][0]
         optimize *= (1 + sine_like)
         best_n = n_range[np.argmax(optimize)]
     elif np.any(limit_1):
         best_n = n_range[np.argmax(optimize[limit_1])]
     else:
         best_n = 2
-
-    if diagnostic_plot:
-        fig, ax = plt.subplots(figsize=[14, 10])
-        ax.plot(n_range[[0, -1]], [dev_limit, dev_limit])
-        ax.plot(n_range, deviation, label='deviation')
-        ax.plot(n_range, optimize, label='optimize')
-        ax.plot(n_range, sine_like, label='sine_like')
-        ax.set_xlabel('n_kernel')
-        ax.set_ylabel('statistic')
-        plt.tight_layout()
-        plt.legend(title=f'n={best_n}')
-        plt.show()
-    return best_n
-
-
-def find_best_n_old(times, signal, min_n=2, max_n=50, dev_limit=1.8, diagnostic_plot=False):
-    """Confirms whether eclipses are found in the light curve or not, and
-    serves to find the best number of points for smoothing the signal
-    in the further analysis (n_kernel).
-    This is a brute force routine, so might be suboptimal to run every time.
-    On the bright side, similar data sets will have similar optimal n_kernel
-    (mainly driven by the amount of points covering eclipse in/egress).
-    """
-    # todo: need better function... some just need a bit more
-    if (min_n < 2):
-        print('min_n = 2 is really the minimum.')
-        min_n = 2
-    n_range = np.arange(min_n, max_n)
-    noise = np.zeros([len(n_range)], dtype=float)
-    deviation = np.zeros([len(n_range)], dtype=float)
-    # get a first signal error estimate
-    n_repeats, rep_mask = repeat_points_internals(times, 2)
-    signal_e = np.repeat(signal, n_repeats)
-    diff = np.diff(signal_e)[rep_mask[:-1]]
-    err_est = np.median(np.abs(diff))
-    # go through values of n to get the best one
-    for i, n in enumerate(n_range):
-        diff_1, signal_s = smooth_diff(signal_e, n, rep_mask)
-        diff_1e = np.repeat(diff_1, n_repeats)
-        diff_2, diff_1s = smooth_diff(diff_1e, n, rep_mask)
-        noise[i] = np.median(np.abs(diff_1s)) / err_est
-        deviation[i] = np.mean(((signal - signal_s) / err_est)**2)
-    # set the initial deviation to 1 and check for high values
-    deviation = deviation - (deviation[0] - 1)
-    check_1 = (deviation < dev_limit)
-    # take points into account up to the maximum noise if this is not at index 0
-    if np.any(check_1):
-        argmax = np.argmax(noise[check_1])
-        if (argmax == 0):
-            argmin = np.argmin(noise[check_1])
-        else:
-            argmin = np.argmin(noise[:argmax + 1])
-    else:
-        argmin = 0
-    best_n = n_range[argmin]
     
     if diagnostic_plot:
-        fig, ax = plt.subplots(figsize=[14, 10])
-        ax.plot(n_range, noise, label='noise')
-        ax.plot(n_range, deviation, label='deviation')
-        ax.set_xlabel('n_kernel')
-        ax.set_ylabel('statistic')
-        plt.tight_layout()
-        plt.legend(title=f'n={best_n}')
-        plt.show()
-    return best_n
+        return best_n, n_range, deviation, optimize, sine_like
+    else:
+        return best_n
 
 
-@nb.jit(nopython=True)
+def find_best_n_dplot(n_range, deviation, optimize, sine_like, best_n):
+    """Diagnostic plot for find_best_n."""
+    fig, ax = plt.subplots(figsize=[14, 10])
+    ax.plot(n_range[[0, -1]], [2.5, 2.5])
+    ax.plot(n_range, deviation, label='deviation')
+    ax.plot(n_range, optimize, label='optimize')
+    ax.plot(n_range, sine_like, label='sine_like')
+    ax.set_xlabel('n_kernel')
+    ax.set_ylabel('statistic')
+    plt.tight_layout()
+    plt.legend(title=f'n={best_n}')
+    plt.show()
+    return
+
+
+@nb.njit(cache=True)
 def curve_walker(signal, peaks, slope_sign, no_gaps, mode='up', look_ahead=1):
     """Walk up or down a slope to approach zero or to reach an extremum.
     'peaks' are the starting points, 'signal' is the slope to walk
@@ -599,9 +458,11 @@ def curve_walker(signal, peaks, slope_sign, no_gaps, mode='up', look_ahead=1):
     return cur_i
 
 
-@nb.jit(nopython=True)
-def group_same_peak(deriv_1s, peaks_13):
-    """Determine which groups of peaks fall on the same actual peak in the deriv."""
+@nb.njit(cache=True)
+def eliminate_same_peak(deriv_1s, deriv_13s, peaks_13):
+    """Determine which groups of peaks fall on the same actual peak in the deriv_1s.
+    Let only the highest point in deriv_13s pass.
+    """
     same_pks = np.zeros(len(peaks_13) - 1, dtype=np.bool_)
     for i, pk in enumerate(peaks_13[:-1]):
         pk1_h = deriv_1s[pk]
@@ -614,21 +475,24 @@ def group_same_peak(deriv_1s, peaks_13):
             pk_h = max(pk1_h, pk2_h)
             all_below = np.all(deriv_1s[pk:peaks_13[i + 1] + 1] < 0.9 * pk_h)
             same_pks[i] = all_below
-
-    groups = []
+    
+    # let only the highest point in deriv_13s pass
+    passed = np.ones(len(peaks_13), dtype=np.bool_)
     last_i = -1
     for i, same in enumerate(same_pks):
         if ((i >= last_i) & same):
-            grp = [i]
-            grp += ([j for j in range(len(peaks_13)) if (j > i) & np.all(same_pks[i:j])])
-            if (len(grp) > 0):
-                groups.append(grp)
-                last_i = grp[-1]
+            group = [i]
+            group += ([j for j in range(len(peaks_13)) if (j > i) & np.all(same_pks[i:j])])
+            group = np.asarray(group)
+            if (len(group) > 0):
+                last_i = group[-1]
             else:
                 last_i = i
+            passed[group] = False
+            passed[group[np.argmax(deriv_13s[peaks_13[group]])]] = True
         else:
             continue
-    return groups
+    return passed
 
 
 def mark_eclipses(times, signal_s, s_derivs, r_derivs, n_kernel):
@@ -645,12 +509,7 @@ def mark_eclipses(times, signal_s, s_derivs, r_derivs, n_kernel):
     pk_13_widths, wh, ipsl, ipsr = sp.signal.peak_widths(deriv_13s, peaks_13, rel_height=0.5)
     pk_13_widths = np.ceil(pk_13_widths / 2).astype(int)
     # check whether multiple peaks_13 were found on a single deriv_1 peak
-    groups = group_same_peak(deriv_1s, peaks_13)
-    passed_0 = np.ones([len(peaks_13)], dtype=bool)
-    for grp in groups:
-        highest = np.argmax(deriv_13s[peaks_13[grp]])
-        passed_0[grp] = False
-        passed_0[grp[highest]] = True
+    passed_0 = eliminate_same_peak(deriv_1s, deriv_13s, peaks_13)
     peaks_13 = peaks_13[passed_0]
     pk_13_widths = pk_13_widths[passed_0]
     # some useful parameters
@@ -699,11 +558,10 @@ def mark_eclipses(times, signal_s, s_derivs, r_derivs, n_kernel):
         # only correct the converging ones
         peaks_2_nn = curve_walker(deriv_2s, peaks_2_pos, slope_sign, no_gaps, mode='down_to_zero', look_ahead=1)
         peaks_2_neg[check_converge] = peaks_2_nn[check_converge]
-        
+    
     # in/egress peaks (eclipse edges) and bottoms are adjusted a bit
     peaks_edge = np.clip(peaks_2_neg - slope_sign + (n_kernel % 2) - (n_kernel == 2) * neg_slope, 0, max_i)
     peaks_bot = np.clip(peaks_2_pos + (n_kernel % 2), 0, max_i)
-    
     # first check for some simple strong conditions on the eclipses (signal inside must be lower)
     passed_1 = np.ones([n_peaks], dtype=bool)
     passed_1 &= (signal_s[peaks_edge] > signal_s[peaks_bot])
@@ -736,14 +594,19 @@ def mark_eclipses(times, signal_s, s_derivs, r_derivs, n_kernel):
         peak_pairs = np.column_stack([point_outside, point_inside])
         peak_pairs[neg_slope] = peak_pairs[neg_slope][:, ::-1]
         mask_peaks = mask_eclipses(signal_s, peak_pairs)
+        if not np.any(mask_peaks):
+            reduce_noise = True
+            mask_peaks = np.ones(len(times), dtype=bool)
+        else:
+            reduce_noise = False
         
         # get the estimates for the noise in signal_s
-        noise_0 = np.average(np.abs(deriv_1r[mask_peaks] * dt[mask_peaks])) * (1 - 0.5 * sine_like)
+        noise_0 = np.average(np.abs(deriv_1r[mask_peaks] * dt[mask_peaks])) * (1 - 0.5 * (sine_like | reduce_noise))
         # signal to noise in signal_s: difference in height in/out of eclipse
         snr_0 = (signal_s[peaks_edge] - signal_s[peaks_bot]) / noise_0
         passed_2 &= (snr_0 > 2)
         # get the estimates for the noise in deriv_1s
-        noise_1 = np.average(np.abs(deriv_2r[mask_peaks] * dt[mask_peaks])) * (1 - 0.5 * sine_like)
+        noise_1 = np.average(np.abs(deriv_2r[mask_peaks] * dt[mask_peaks])) * (1 - 0.5 * (sine_like | reduce_noise))
         # signal to noise in deriv_1s: difference in slope
         value_around = np.min([-slope_sign * deriv_1s[point_outside], -slope_sign * deriv_1s[point_inside]], axis=0)
         snr_1 = (-slope_sign * deriv_1s[peaks_1] - value_around) / noise_1
@@ -752,18 +615,18 @@ def mark_eclipses(times, signal_s, s_derivs, r_derivs, n_kernel):
         slope_check = np.abs(deriv_1s[peaks_1] - deriv_1s[peaks_2_neg]) / noise_1
         passed_2 &= (snr_1 > slope_check)
         # get the estimates for the noise in deriv_2s
-        noise_2 = np.average(np.abs(deriv_2s[mask_peaks])) * (1 - 0.5 * sine_like)
+        noise_2 = np.average(np.abs(deriv_2s[mask_peaks])) * (1 - 0.5 * (sine_like | reduce_noise))
         # signal to noise in deriv_2s: peak to peak difference
         snr_2 = (deriv_2s[peaks_2_pos] - deriv_2s[peaks_2_neg]) / noise_2
         passed_2 &= (snr_2 > 1)
         # get the estimates for the noise in deriv_3s
-        noise_3 = np.average(np.abs(deriv_3s[mask_peaks])) * (1 - 0.5 * sine_like)
+        noise_3 = np.average(np.abs(deriv_3s[mask_peaks])) * (1 - 0.5 * (sine_like | reduce_noise))
         # signal to noise in deriv_3s: peak height
         value_around = np.min([slope_sign * deriv_3s[point_outside], slope_sign * deriv_3s[point_inside]], axis=0)
         snr_3 = (slope_sign * deriv_3s[peaks_3] - value_around) / noise_3
         passed_2 &= (snr_3 > 1)
         # get the estimates for the noise in deriv_13s
-        noise_13 = np.average(np.abs(deriv_13s[mask_peaks])) * (1 - 0.5 * sine_like)
+        noise_13 = np.average(np.abs(deriv_13s[mask_peaks])) * (1 - 0.5 * (sine_like | reduce_noise))
         # signal to noise in deriv_13s: peak height
         value_around = np.min([deriv_13s[point_outside], deriv_13s[peaks_bot]], axis=0)
         snr_13 = (deriv_13s[peaks_13] - value_around) / noise_13
@@ -786,7 +649,7 @@ def mark_eclipses(times, signal_s, s_derivs, r_derivs, n_kernel):
     return peaks, added_snr, slope_sign, sine_like
 
 
-@nb.jit(nopython=True)
+@nb.njit(cache=True)
 def local_extremum(a, start, right=True, maximum=True):
     """Walks left or right in a 1D-array to find a local extremum."""
     max_i = len(a) - 1
@@ -813,7 +676,8 @@ def local_extremum(a, start, right=True, maximum=True):
     return i
 
 
-def match_in_egress(times, signal, signal_s, added_snr, peaks_edge, peaks_bot, slope_sign):
+@nb.njit(cache=True)
+def match_in_egress(times, signal, signal_s, added_snr, peaks_edge, peaks_bot, neg_slope, pos_slope):
     """Match up the best combinations of ingress and egress to form full eclipses.
     This is done by chopping all peaks up into parts with consecutive sets of
     ingresses and egresses (through slope sign), and then matching the most alike ones.
@@ -822,14 +686,12 @@ def match_in_egress(times, signal, signal_s, added_snr, peaks_edge, peaks_bot, s
     max_i = len(times) - 1
     indices = np.arange(len(added_snr))
     t_peaks = times[peaks_edge]
-    neg_slope = (slope_sign == -1)
-    pos_slope = (slope_sign == 1)
     # depths and widths of the in/egress points
     depths_single = signal_s[peaks_edge] - signal_s[peaks_bot]
     widths_single = np.abs(times[peaks_bot] - times[peaks_edge])
     # find matching combinations to form full eclipses
-    used = np.zeros([len(peaks_edge)], dtype=bool)
-    full_ecl = []
+    used = np.zeros(len(peaks_edge), dtype=np.bool_)
+    full_ecl = np.zeros((0, 2), dtype=np.int_)
     for i in indices:
         if (i == indices[-1]) | (not np.any(neg_slope[i:])):
             # last of the peaks... nothing to pair up to. Or: no negative slopes left after i
@@ -848,56 +710,76 @@ def match_in_egress(times, signal, signal_s, added_snr, peaks_edge, peaks_bot, s
             # todo: think about how to exclude large gaps
             if ((until_2 - i) > 1):
                 # make all combinations of in/egress
-                combs = [[p1, p2] for p1 in ingress for p2 in egress]
+                # combs = np.array(np.meshgrid(ingress, egress)).T.reshape(-1, 2)
+                n_tile = len(ingress)
+                ingress = np.repeat(ingress, len(egress))
+                egress = np.repeat(egress, n_tile).reshape(-1, n_tile).T.flatten()  # egress = np.tile(egress, n_tile)
+                combs = np.column_stack((ingress, egress))
                 if (len(combs) > 0):
                     # for each set of combinations, take the best one
-                    d_add = [2 * abs(added_snr[p1] - added_snr[p2]) / (added_snr[p1] + added_snr[p2])
-                             for p1, p2 in combs]
-                    depths = [(depths_single[p1], depths_single[p2]) for p1, p2 in combs]
-                    d_depth = [2 * abs(d1 - d2) / (d1 + d2) for d1, d2 in depths]
-                    widths = [(widths_single[p1], widths_single[p2]) for p1, p2 in combs]
-                    d_width = [2 * abs(w1 - w2) / (w1 + w2) for w1, w2 in widths]
-                    d_time = [(t_peaks[p2] - t_peaks[p1]) for p1, p2 in combs]
-                    d_time = [t - min(d_time) for t in d_time]
-                    d_stat = [a + t + d + w for a, t, d, w in zip(d_add, d_time, d_depth, d_width)]
-                    full_ecl.append(combs[np.argmin(d_stat)])
+                    d_add = (2 * np.abs(added_snr[ingress] - added_snr[egress])
+                             / (added_snr[ingress] + added_snr[egress]))
+                    d_depth = (2 * np.abs(depths_single[ingress] - depths_single[egress])
+                               / (depths_single[ingress] + depths_single[egress]))
+                    d_width = (2 * np.abs(widths_single[ingress] - widths_single[egress])
+                               / (widths_single[ingress] + widths_single[egress]))
+                    d_time = (t_peaks[egress] - t_peaks[ingress])
+                    d_time = d_time - np.min(d_time)
+                    d_stat = d_add + d_time + d_depth + d_width
+                    full_ecl = np.vstack((full_ecl, np.expand_dims(combs[np.argmin(d_stat)], 0)))
             used[i:until_2] = True
 
-    full_ecl = np.array(full_ecl)
-    not_used = np.ones([len(indices)], dtype=bool)
-    if (len(full_ecl) != 0):
+    if (len(full_ecl) == 0):
+        not_used = np.ones(len(indices), dtype=np.bool_)
+    else:
         # take the average width of the full_ecl
         avg_added = (added_snr[full_ecl[:, 0]] + added_snr[full_ecl[:, 1]]) / 2
         full_widths = (times[peaks_edge[full_ecl[:, 1]]] - times[peaks_edge[full_ecl[:, 0]]])
-        med_width = np.median(full_widths[avg_added >= np.average(avg_added)])
+        med_width = np.median(full_widths[avg_added >= np.mean(avg_added)])
         # and compare the other full_ecl against it.
         passed = (full_widths > 0.1 * med_width) & (full_widths < 2.5 * med_width)
         # check the average in-eclipse level compared to surrounding
-        avg_inside = np.zeros([len(full_ecl)])
-        avg_outside = np.zeros([len(full_ecl)])
-        std_inside = np.zeros([len(full_ecl)])
-        std_outside = np.zeros([len(full_ecl)])
-        std_s_outside = np.zeros([len(full_ecl)])
+        avg_inside = np.zeros(len(full_ecl))
+        avg_outside = np.zeros(len(full_ecl))
+        std_inside = np.zeros(len(full_ecl))
+        std_outside = np.zeros(len(full_ecl))
+        std_s_outside = np.zeros(len(full_ecl))
+        std = np.zeros(len(full_ecl))
         for i, ecl in enumerate(full_ecl):
             pk1 = peaks_edge[ecl[0]]
             pk2 = peaks_edge[ecl[1]]
-            avg_inside[i] = np.average(signal[pk1 + 1:pk2 - 1])
+            avg_inside[i] = np.mean(signal[pk1 + 1:pk2 - 1])
             std_inside[i] = np.std(signal[pk1 + 1:pk2 - 1])
-            avg_outside[i] = np.average(signal[np.clip(pk1 - (pk2 - pk1) // 2, 0, max_i):pk1]) / 2
-            avg_outside[i] += np.average(signal[pk2:np.clip(pk2 + (pk2 - pk1) // 2, 0, max_i)]) / 2
-            std_outside[i] = np.std(signal[np.clip(pk1 - (pk2 - pk1) // 2, 0, max_i):pk1]) / 2
-            std_outside[i] += np.std(signal[pk2:np.clip(pk2 + (pk2 - pk1) // 2, 0, max_i)]) / 2
-            # also determine std of signal_s
-            std_s_outside[i] = np.std(signal_s[np.clip(pk1 - (pk2 - pk1) // 2, 0, max_i):pk1]) / 2
-            std_s_outside[i] += np.std(signal_s[pk2:np.clip(pk2 + (pk2 - pk1) // 2, 0, max_i)]) / 2
-        std = np.max(np.vstack([std_inside, std_outside]), axis=0)
-        passed &= (avg_inside < avg_outside - np.max([std, std_s_outside], axis=0))
+            if (pk1 > 0) & (pk2 < max_i):
+                pk1_l = max(0, min(pk1 - (pk2 - pk1) // 2, max_i))
+                pk2_r = max(0, min(pk2 + (pk2 - pk1) // 2, max_i))
+                avg_outside[i] = np.mean(signal[pk1_l:pk1]) / 2
+                avg_outside[i] += np.mean(signal[pk2:pk2_r]) / 2
+                std_outside[i] = np.std(signal[pk1_l:pk1]) / 2
+                std_outside[i] += np.std(signal[pk2:pk2_r]) / 2
+                std_s_outside[i] = np.std(signal_s[pk1_l:pk1]) / 2  # also determine std of signal_s
+                std_s_outside[i] += np.std(signal_s[pk2:pk2_r]) / 2
+            elif (pk1 > 0):
+                pk1_l = max(0, min(pk1 - (pk2 - pk1) // 2, max_i))
+                avg_outside[i] = np.mean(signal[pk1_l:pk1])
+                std_outside[i] = np.std(signal[pk1_l:pk1])
+                std_s_outside[i] = np.std(signal_s[pk1_l:pk1])
+            elif (pk2 < max_i):
+                pk2_r = max(0, min(pk2 + (pk2 - pk1) // 2, max_i))
+                avg_outside[i] = np.mean(signal[pk2:pk2_r])
+                std_outside[i] = np.std(signal[pk2:pk2_r])
+                std_s_outside[i] = np.std(signal_s[pk2:pk2_r])
+            std[i] = max(std_inside[i], std_outside[i], std_s_outside[i])
+        passed &= (avg_inside < avg_outside - std)
         full_ecl = full_ecl[passed]
         # also make an array of bool for which peaks where used
-        not_used = np.array([False if i in full_ecl else True for i in indices])
+        not_used = np.ones(len(indices), dtype=np.bool_)
+        not_used[full_ecl[:, 0]] = False
+        not_used[full_ecl[:, 1]] = False
     return full_ecl, not_used
 
 
+@nb.njit(cache=True)
 def assemble_eclipses(times, signal, signal_s, peaks, added_snr, slope_sign):
     """Goes through the found peaks to assemble the eclipses in a neat array of indices.
     Eclipses are marked by 4 indices each: ingress top and bottom,
@@ -906,116 +788,136 @@ def assemble_eclipses(times, signal, signal_s, peaks, added_snr, slope_sign):
     for the full eclipses and an array with flags, meaning:
     f (full), lh (left half) and rh (right half)
     """
+    
     if (len(added_snr) == 0):
         # nothing to assemble
-        return np.array([]), added_snr, np.array([])
-    # define some recurring variables
-    peaks_1, peaks_2_neg, peaks_2_pos, peaks_edge, peaks_bot, peaks_3, peaks_13 = peaks
-    indices = np.arange(len(peaks_edge))
-    neg_slope = (slope_sign == -1)
-    pos_slope = (slope_sign == 1)
-    # determine snr-categories by selecting peaks in the histogram
-    hist, edges = np.histogram(added_snr, bins=np.floor(np.sqrt(len(added_snr))).astype(int))
-    i_max_1 = np.argmax(hist)
-    i_min_1_l = local_extremum(hist, i_max_1, right=False, maximum=False)
-    i_min_1_r = local_extremum(hist, i_max_1, right=True, maximum=False)
-    hist2 = np.copy(hist)
-    hist2[i_min_1_l:i_min_1_r + 1] = 0
-    if np.any(hist2 != 0):
-        i_max_2 = np.argmax(hist2)
-        i_min_2_l = local_extremum(hist, i_max_2, right=False, maximum=False)
-        i_min_2_r = local_extremum(hist, i_max_2, right=True, maximum=False)
-        hist3 = np.copy(hist2)
-        hist3[i_min_2_l:i_min_2_r + 1] = 0
+        ecl_indices = np.zeros((0, 4), dtype=np.int_)
+        flags = np.zeros(0, dtype=np.int_)
+    elif (len(added_snr) == 1):
+        # nothing to assemble, just one candidate in/egress
+        peaks_1, peaks_2_neg, peaks_2_pos, peaks_edge, peaks_bot, peaks_3, peaks_13 = peaks
+        ecl_indices = np.zeros((1, 4), dtype=np.int_)
+        ecl_indices[0, 0] = peaks_edge[0] * (slope_sign[0] == 1) + peaks_bot[0] * (slope_sign[0] == -1)
+        ecl_indices[0, 1] = peaks_bot[0]
+        ecl_indices[0, 2] = peaks_bot[0]
+        ecl_indices[0, 3] = peaks_edge[0] * (slope_sign[0] == -1) + peaks_bot[0] * (slope_sign[0] == 1)
+        flags = np.ones(1, dtype=np.int_) + int(slope_sign[0] == -1)
     else:
-        i_max_2 = -1
-        hist3 = np.zeros([len(hist2)])
-    if np.any(hist3 != 0):
-        i_max_3 = np.argmax(hist3)
-    else:
-        i_max_3 = -1
-    # sort the found peaks (they could have been in any order)
-    arr_max_i = np.array([i_max_1, i_max_2, i_max_3])
-    index_sorter = np.argsort(arr_max_i)
-    i_max_1, i_max_2, i_max_3 = arr_max_i[index_sorter]
-    # define two dividing lines for each group
-    if np.all(edges[arr_max_i] > 20) & np.all(arr_max_i != -1):
-        # we have no distinct 'noise' group: choose divider based on histogram height
-        hist_sorter = np.argsort(hist[arr_max_i])
-        g1_i = arr_max_i[hist_sorter][-1]
-        g2_i = arr_max_i[hist_sorter][-2]
-        divider_1 = (edges[g1_i] + edges[g2_i]) / 2
-        divider_2 = 0
-    elif np.all(edges[arr_max_i[arr_max_i != -1]] > 40) & (np.sum(arr_max_i == -1) == 1):
-        # we might not have distinct groups: check hist height
-        divider_1 = (edges[i_max_2] + edges[i_max_3]) / 2
-        divider_2 = 0
-        if (np.min(hist[i_max_2:i_max_3]) > max(hist[i_max_2], hist[i_max_3]) * 2 / 3):
+        # define some recurring variables
+        peaks_1, peaks_2_neg, peaks_2_pos, peaks_edge, peaks_bot, peaks_3, peaks_13 = peaks
+        indices = np.arange(len(peaks_edge))
+        neg_slope = (slope_sign == -1)
+        pos_slope = (slope_sign == 1)
+        # determine snr-categories by selecting peaks in the histogram
+        hist, edges = np.histogram(added_snr, bins=int(np.floor(np.sqrt(len(added_snr)))))
+        i_max_1 = np.argmax(hist)
+        i_min_1_l = local_extremum(hist, i_max_1, right=False, maximum=False)
+        i_min_1_r = local_extremum(hist, i_max_1, right=True, maximum=False)
+        hist2 = np.copy(hist)
+        hist2[i_min_1_l:i_min_1_r + 1] = 0
+        if np.any(hist2 != 0):
+            i_max_2 = np.argmax(hist2)
+            i_min_2_l = local_extremum(hist, i_max_2, right=False, maximum=False)
+            i_min_2_r = local_extremum(hist, i_max_2, right=True, maximum=False)
+            hist3 = np.copy(hist2)
+            hist3[i_min_2_l:i_min_2_r + 1] = 0
+        else:
+            i_max_2 = -1
+            hist3 = np.zeros(len(hist2), dtype=np.int_)
+        if np.any(hist3 != 0):
+            i_max_3 = np.argmax(hist3)
+        else:
+            i_max_3 = -1
+        # sort the found peaks (they could have been in any order)
+        arr_max_i = np.array([i_max_1, i_max_2, i_max_3])
+        index_sorter = np.argsort(arr_max_i)
+        i_max_1, i_max_2, i_max_3 = arr_max_i[index_sorter]
+        # define two dividing lines for each group
+        if np.all(edges[arr_max_i] > 20) & np.all(arr_max_i != -1):
+            # we have no distinct 'noise' group: choose divider based on histogram height
+            hist_sorter = np.argsort(hist[arr_max_i])
+            g1_i = arr_max_i[hist_sorter][-1]
+            g2_i = arr_max_i[hist_sorter][-2]
+            divider_1 = (edges[g1_i] + edges[g2_i]) / 2
+            divider_2 = 0
+        elif np.all(edges[arr_max_i[arr_max_i != -1]] > 40) & (np.sum(arr_max_i == -1) == 1):
+            # we might not have distinct groups: check hist height
+            divider_1 = (edges[i_max_2] + edges[i_max_3]) / 2
+            divider_2 = 0
+            if (np.min(hist[i_max_2:i_max_3]) > max(hist[i_max_2], hist[i_max_3]) * 2 / 3):
+                divider_1 = 0
+        elif (i_max_1 == -1) & (i_max_2 == -1):
+            # only one group found
             divider_1 = 0
-    elif (i_max_1 == -1) & (i_max_2 == -1):
-        # only one group found
-        divider_1 = 0
-        divider_2 = 0
-    elif (i_max_1 == -1):
-        # two groups found
-        divider_1 = (edges[i_max_2] + edges[i_max_3]) / 2
-        divider_2 = 0
-    else:
-        # three groups found, including a 'noise' group
-        divider_1 = (edges[i_max_3] + edges[i_max_2]) / 2
-        divider_2 = (edges[i_max_2] + edges[i_max_1]) / 2
-
-    # keep track of which category the eclipses belong to
-    cat = np.zeros([indices[-1] + 1], dtype='<U2')
-    # split up into a high, middle and low snr group
-    group_high = (added_snr >= divider_1)
-    group_mid = (added_snr >= divider_2) & (added_snr < divider_1)
-    if (np.average(added_snr[group_mid]) > 100):
-        # if both groups are high snr, should be fine (and better) to handle them simultaneously
-        group_high |= group_mid
-    group_low = (added_snr < divider_2)
-    # match peaks form the highest group
-    full_ecl_gh, unused_gh = match_in_egress(times, signal, signal_s, added_snr[group_high], peaks_edge[group_high],
-                                             peaks_bot[group_high], slope_sign[group_high])
-    if (len(full_ecl_gh) > 0):
-        full_ecl = indices[group_high][full_ecl_gh]
-    else:
-        full_ecl = np.zeros([0, 2], dtype=int)
-    cat[group_high] = 'g1'
-    # match peaks form the middle group
-    if np.any(group_mid):
-        group_mid[group_high] |= unused_gh  # put any non-used peaks in the next group
-        full_ecl_gm, unused_gm = match_in_egress(times, signal, signal_s, added_snr[group_mid], peaks_edge[group_mid],
-                                                 peaks_bot[group_mid], slope_sign[group_mid])
-        if (len(full_ecl_gm) > 0):
-            full_ecl = np.vstack([full_ecl, indices[group_mid][full_ecl_gm]])
-        cat[group_mid] = 'g2'
-        group_low[group_mid] |= unused_gm  # put any non-used peaks in the next group
-    else:
-        group_low[group_high] |= unused_gh  # put any non-used peaks in the next group
-    # match peaks form the lowest group
-    if np.any(group_low):
-        full_ecl_gl, unused_gl = match_in_egress(times, signal, signal_s, added_snr[group_low], peaks_edge[group_low],
-                                                 peaks_bot[group_low], slope_sign[group_low])
-        if (len(full_ecl_gl) > 0):
-            full_ecl = np.vstack([full_ecl, indices[group_low][full_ecl_gl]])
-        cat[group_low] = 'g3'
+            divider_2 = 0
+        elif (i_max_1 == -1):
+            # two groups found
+            divider_1 = (edges[i_max_2] + edges[i_max_3]) / 2
+            divider_2 = 0
+        else:
+            # three groups found, including a 'noise' group
+            divider_1 = (edges[i_max_3] + edges[i_max_2]) / 2
+            divider_2 = (edges[i_max_2] + edges[i_max_1]) / 2
     
-    # check overlapping eclipses
-    mean_snr = (added_snr[full_ecl[:, 0]] + added_snr[full_ecl[:, 1]]) / 2
-    overlap = np.zeros([len(mean_snr)], dtype=bool)
-    i_full_ecl = np.arange(len(full_ecl))
-    for i, ecl in enumerate(full_ecl):
-        cond1 = ((ecl[0] > full_ecl[:, 0]) & (ecl[0] < full_ecl[:, 1]))
-        cond2 = ((ecl[1] > full_ecl[:, 0]) & (ecl[1] < full_ecl[:, 1]))
-        if np.any(cond1 | cond2):
-            i_overlap = np.append([i], i_full_ecl[cond1 | cond2])
-            snr_vals = mean_snr[i_overlap]
-            overlap[i_overlap] = (snr_vals != np.max(snr_vals))
-    full_ecl = full_ecl[np.invert(overlap)]
-    # finally, construct the eclipse indices array
-    if (len(full_ecl) != 0):
-        ecl_indices = np.zeros([indices[-1] + 1, 4], dtype=int)
+        # keep track of which category the eclipses belong to
+        # split up into a high, middle and low snr group
+        group_high = (added_snr >= divider_1)
+        group_mid = (added_snr >= divider_2) & (added_snr < divider_1)
+        if (len(added_snr[group_mid]) > 0):
+            if (np.mean(added_snr[group_mid]) > 100):
+                # if both groups are high snr, should be fine (and better) to handle them simultaneously
+                group_high = group_high | group_mid
+        group_low = (added_snr < divider_2)
+        # match peaks form the highest group
+        full_ecl_gh, unused_gh = match_in_egress(times, signal, signal_s, added_snr[group_high],
+                                                 peaks_edge[group_high], peaks_bot[group_high],
+                                                 neg_slope[group_high], pos_slope[group_high])
+        if (len(full_ecl_gh) > 0):
+            # full_ecl = indices[group_high][full_ecl_gh]  #doesn't work with numba due to indexing 1d with 2d array
+            full_ecl = np.zeros((len(full_ecl_gh), 2), dtype=np.int_)
+            full_ecl[:, 0] = indices[group_high][full_ecl_gh[:, 0]]
+            full_ecl[:, 1] = indices[group_high][full_ecl_gh[:, 1]]
+        else:
+            full_ecl = np.zeros((0, 2), dtype=np.int_)
+        # match peaks form the middle group
+        if np.any(group_mid):
+            group_mid[group_high] = group_mid[group_high] | unused_gh  # put any non-used peaks in the next group
+            full_ecl_gm, unused_gm = match_in_egress(times, signal, signal_s, added_snr[group_mid],
+                                                     peaks_edge[group_mid], peaks_bot[group_mid],
+                                                     neg_slope[group_mid], pos_slope[group_mid])
+            if (len(full_ecl_gm) > 0):
+                # full_ecl = np.vstack((full_ecl, indices[group_mid][full_ecl_gm]))
+                full_ecl = np.vstack((full_ecl, np.zeros((len(full_ecl_gm), 2), dtype=np.int_)))
+                full_ecl[-len(full_ecl_gm):, 0] = indices[group_mid][full_ecl_gm[:, 0]]
+                full_ecl[-len(full_ecl_gm):, 1] = indices[group_mid][full_ecl_gm[:, 1]]
+            group_low[group_mid] = group_low[group_mid] | unused_gm  # put any non-used peaks in the next group
+        else:
+            group_low[group_high] = group_low[group_high] | unused_gh  # put any non-used peaks in the next group
+        # match peaks form the lowest group
+        if np.any(group_low):
+            full_ecl_gl, unused_gl = match_in_egress(times, signal, signal_s, added_snr[group_low],
+                                                     peaks_edge[group_low], peaks_bot[group_low],
+                                                     neg_slope[group_low], pos_slope[group_low])
+            if (len(full_ecl_gl) > 0):
+                # full_ecl = np.vstack((full_ecl, indices[group_low][full_ecl_gl]))
+                full_ecl = np.vstack((full_ecl, np.zeros((len(full_ecl_gl), 2), dtype=np.int_)))
+                full_ecl[-len(full_ecl_gl):, 0] = indices[group_low][full_ecl_gl[:, 0]]
+                full_ecl[-len(full_ecl_gl):, 1] = indices[group_low][full_ecl_gl[:, 1]]
+        
+        # check overlapping eclipses
+        mean_snr = (added_snr[full_ecl[:, 0]] + added_snr[full_ecl[:, 1]]) / 2
+        overlap = np.zeros(len(mean_snr), dtype=np.bool_)
+        i_full_ecl = np.arange(len(full_ecl))
+        for i, ecl in enumerate(full_ecl):
+            cond1 = ((ecl[0] > full_ecl[:, 0]) & (ecl[0] < full_ecl[:, 1]))
+            cond2 = ((ecl[1] > full_ecl[:, 0]) & (ecl[1] < full_ecl[:, 1]))
+            if np.any(cond1 | cond2):
+                i_overlap = np.append([i], i_full_ecl[cond1 | cond2])
+                snr_vals = mean_snr[i_overlap]
+                overlap[i_overlap] = (snr_vals != np.max(snr_vals))
+        full_ecl = full_ecl[np.invert(overlap)]
+        # finally, construct the eclipse indices array
+        ecl_indices = np.zeros((indices[-1] + 1, 4), dtype=np.int_)
         ecl_indices[pos_slope, 0] = peaks_edge[pos_slope]
         ecl_indices[pos_slope, 1] = peaks_bot[pos_slope]
         ecl_indices[pos_slope, 2] = peaks_bot[pos_slope]
@@ -1024,31 +926,29 @@ def assemble_eclipses(times, signal, signal_s, peaks, added_snr, slope_sign):
         ecl_indices[neg_slope, 1] = peaks_bot[neg_slope]
         ecl_indices[neg_slope, 2] = peaks_bot[neg_slope]
         ecl_indices[neg_slope, 3] = peaks_edge[neg_slope]
-        ecl_indices[full_ecl[:, 0], 2] = ecl_indices[full_ecl[:, 1], 2]
-        ecl_indices[full_ecl[:, 0], 3] = ecl_indices[full_ecl[:, 1], 3]
-        ecl_indices = np.delete(ecl_indices, full_ecl[:, 1], axis=0)
-        flags = np.zeros([indices[-1] + 1], dtype='<U3')
-        flags[slope_sign == 1] = 'lh-'
-        flags[slope_sign == -1] = 'rh-'
-        flags[full_ecl[:, 0]] = 'f-'
-        flags = np.char.add(flags, cat)  # append the categories to the flags
-        flags = np.delete(flags, full_ecl[:, 1])
-        added_snr[full_ecl[:, 0]] = (added_snr[full_ecl[:, 0]] + added_snr[full_ecl[:, 1]]) / 2
-        added_snr = np.delete(added_snr, full_ecl[:, 1])
-    else:
-        ecl_indices = np.array([])
-        flags = np.array([])
-    # check whether eclipses consist of just one data point
-    keep = []
-    for ecl in ecl_indices:
-        ecl_signal = signal[ecl[0]:ecl[-1] + 1]
-        max_signal = np.max(ecl_signal)
-        depth = max_signal - np.min(ecl_signal)
-        n_below = len(ecl_signal[ecl_signal < max_signal - depth / 2])
-        keep.append(n_below > 1)
-    ecl_indices = ecl_indices[keep]
-    added_snr = added_snr[keep]
-    flags = flags[keep]
+        flags = np.zeros((indices[-1] + 1), dtype=np.int_)
+        flags[pos_slope] = 1  # was 'lh-' for left half
+        flags[neg_slope] = 2  # was 'rh-' for right half
+        if (len(full_ecl) != 0):
+            keep_ecl = np.delete(indices, full_ecl[:, 1])
+            ecl_indices[full_ecl[:, 0], 2] = ecl_indices[full_ecl[:, 1], 2]
+            ecl_indices[full_ecl[:, 0], 3] = ecl_indices[full_ecl[:, 1], 3]
+            ecl_indices = ecl_indices[keep_ecl]
+            flags[full_ecl[:, 0]] = 0  # was 'f-'
+            flags = flags[keep_ecl]
+            added_snr[full_ecl[:, 0]] = (added_snr[full_ecl[:, 0]] + added_snr[full_ecl[:, 1]]) / 2
+            added_snr = np.delete(added_snr, full_ecl[:, 1])
+        # check whether eclipses consist of just one data point
+        keep = np.zeros(len(flags), dtype=np.bool_)
+        for i, ecl in enumerate(ecl_indices):
+            ecl_signal = signal[ecl[0]:ecl[-1] + 1]
+            max_signal = np.max(ecl_signal)
+            depth = max_signal - np.min(ecl_signal)
+            n_below = len(ecl_signal[ecl_signal < max_signal - depth / 2])
+            keep[i] = (n_below > 1)
+        ecl_indices = ecl_indices[keep]
+        added_snr = added_snr[keep]
+        flags = flags[keep]
     return ecl_indices, added_snr, flags
 
 
@@ -1065,8 +965,7 @@ def plot_marker_diagnostics(times, signal, signal_s, s_derivs, peaks, ecl_indice
     ax[0].scatter(times[peaks_edge], signal[peaks_edge], label='outside', c='tab:red')
     ax[0].scatter(times[peaks_bot], signal[peaks_bot], label='inside', c='tab:green')
     for i, ecl in enumerate(ecl_indices):
-        full = (flags[i].startswith('f'))
-        colour = 'tab:red' * full + 'tab:purple' * (not full)
+        colour = 'tab:red' * (flags[i] == 0) + 'tab:purple' * (flags[i] != 0)
         ax[0].plot(times[ecl[[0, -1]]], [plot_height, plot_height], c=colour, marker='|')
     ax[0].plot([], [], c='tab:red', marker='|', label='full eclipses')
     ax[0].plot([], [], c='tab:purple', marker='|', label='eclipse halves')
@@ -1116,6 +1015,7 @@ def find_eclipses(times, signal, n_kernel, diagnostic_plot=False):
     return ecl_indices, added_snr, flags, sine_like
 
 
+@nb.njit(cache=True)
 def measure_eclipses(times, signal, ecl_indices, flags):
     """Get the eclipse midpoints, widths and depths.
     Eclipse depths are averaged between the in and egress side for full eclipses. In high
@@ -1128,38 +1028,41 @@ def measure_eclipses(times, signal, ecl_indices, flags):
     not mean that it is not a flat-bottomed eclipse per se. On the other hand,
     a non-zero ratio is a strong indication that there is a flat bottom.
     """
-    # prepare some arrays
-    m_full = np.char.startswith(flags, 'f')  # mask of the full eclipses
-    m_left = np.char.startswith(flags, 'lh')
-    m_right = np.char.startswith(flags, 'rh')
-    l_o = ecl_indices[:, 0]  # left outside
-    l_i = ecl_indices[:, 1]  # left inside
-    r_i = ecl_indices[:, -2]  # right inside
-    r_o = ecl_indices[:, -1]  # right outside
-    # calculate the widths
-    widths_bottom = times[r_i[m_full]] - times[l_i[m_full]]
-    widths = np.zeros([len(flags)])
-    widths[m_full] = times[r_o[m_full]] - times[l_o[m_full]]
-    widths[m_left] = times[l_i[m_left]] - times[l_o[m_left]]
-    widths[m_right] = times[r_o[m_right]] - times[r_i[m_right]]
-    # calculate the ratios: a measure for how 'flat-bottomed' it is
-    ratios = np.zeros([len(flags)])
-    ratios[m_full] = widths_bottom / widths[m_full]
-    # calculate the depths
-    depths_l = signal[l_o] - signal[l_i]  # can be zero
-    depths_r = signal[r_o] - signal[r_i]  # can be zero
-    denom = 2 * m_full + 1 * m_left + 1 * m_right  # should give 2's and 1's (only!)
-    depths = (depths_l + depths_r) / denom
-    # determine the eclipse midpoints, and estimate them for half eclipses
-    ecl_mid = np.zeros([len(flags)])
-    ecl_mid[m_full] = (times[l_o[m_full]] + times[r_o[m_full]] + times[l_i[m_full]] + times[r_i[m_full]]) / 4
-    # take the inner points as next best estimate for half eclipses
-    ecl_mid[m_left] = times[l_i[m_left]]
-    ecl_mid[m_right] = times[r_i[m_right]]
+    if (len(flags) > 0):
+        # prepare some arrays
+        m_full = (flags == 0)  # mask of the full eclipses
+        m_left = (flags == 1)  # mask of the left halves
+        m_right = (flags == 2)  # mask of the right halves
+        l_o = ecl_indices[:, 0]  # left outside
+        l_i = ecl_indices[:, 1]  # left inside
+        r_i = ecl_indices[:, -2]  # right inside
+        r_o = ecl_indices[:, -1]  # right outside
+        # calculate the widths
+        widths_bottom = times[r_i[m_full]] - times[l_i[m_full]]
+        widths = np.zeros(len(flags))
+        widths[m_full] = times[r_o[m_full]] - times[l_o[m_full]]
+        widths[m_left] = times[l_i[m_left]] - times[l_o[m_left]]
+        widths[m_right] = times[r_o[m_right]] - times[r_i[m_right]]
+        # calculate the ratios: a measure for how 'flat-bottomed' it is
+        ratios = np.zeros(len(flags))
+        ratios[m_full] = widths_bottom / widths[m_full]
+        # calculate the depths
+        depths_l = signal[l_o] - signal[l_i]  # can be zero
+        depths_r = signal[r_o] - signal[r_i]  # can be zero
+        denom = 2 * m_full + 1 * m_left + 1 * m_right  # should give 2's and 1's (only!)
+        depths = (depths_l + depths_r) / denom
+        # determine the eclipse midpoints, and estimate them for half eclipses
+        ecl_mid = np.zeros(len(flags))
+        ecl_mid[m_full] = (times[l_o[m_full]] + times[r_o[m_full]] + times[l_i[m_full]] + times[r_i[m_full]]) / 4
+        # take the inner points as next best estimate for half eclipses
+        ecl_mid[m_left] = times[l_i[m_left]]
+        ecl_mid[m_right] = times[r_i[m_right]]
+    else:
+        ecl_mid, widths, depths, ratios = np.zeros((4, 0), dtype=np.float_)
     return ecl_mid, widths, depths, ratios
 
 
-@nb.jit(nopython=True)
+@nb.njit(cache=True)
 def construct_range(t_0, period, domain, p_min=0.1):
     """More elaborate arange algorithm.
     t_0: the fixed point in the range, from where the pattern builds outward.
@@ -1178,7 +1081,7 @@ def construct_range(t_0, period, domain, p_min=0.1):
     return points, n_range
 
 
-@nb.jit(nopython=True)
+@nb.njit(cache=True)
 def pattern_test(ecl_mid, added_snr, widths, time_frame, ecl_0=None, p_max=None, p_step=None):
     """Test for the presence of a regular pattern in a set of eclipse midpoints.
     ecl_mid: measured eclipse positions
@@ -1210,9 +1113,9 @@ def pattern_test(ecl_mid, added_snr, widths, time_frame, ecl_0=None, p_max=None,
     p_min = max(0.001, p_min)
     # set the period step if not given
     if p_step is None:
-        p_step = 1 / (100 * np.ptp(ecl_mid))
+        p_step = np.mean(widths) / (10 * np.ptp(ecl_mid))
     p_step = min(p_step, 0.01 * p_max)
-    # make the period grid and the k-dimensional lookup tree
+    # make the period grid
     periods = np.arange(p_min, p_max, p_step)
     # fill the goodness of fit array
     gof = np.zeros(len(periods))
@@ -1235,7 +1138,7 @@ def pattern_test(ecl_mid, added_snr, widths, time_frame, ecl_0=None, p_max=None,
     return periods, gof
 
 
-@nb.jit(nopython=True)
+@nb.njit(cache=True)
 def extract_pattern(ecl_mid, widths, ecl_0, ecl_period, time_frame):
     """Get the indices of the eclipses matching the pattern."""
     pattern, n_range = construct_range(ecl_mid[ecl_0], ecl_period, time_frame)
@@ -1251,81 +1154,30 @@ def extract_pattern(ecl_mid, widths, ecl_0, ecl_period, time_frame):
     return np.arange(len(ecl_mid))[cn_w]
 
 
-def measure_grouping(periods, ecl_mid, added_snr):
+@nb.njit(cache=True)
+def measure_phase_dev(periods, ecl_mid):
     """Measures how closely the phase folded eclipses are grouped in phase space,
     as well as in the added_snr statistic.
     Folds the times of eclipse midpoints by a given set of periods and measures the
     median absolute deviation (MAD) of the phases.
     Returns the phases and the total MADs.
     """
-    ldtype = np.float32  # halve the space needed (local-dtype)
     # prepare the period array
     n_periods = len(periods)
     n_ecl = len(ecl_mid)
     periods = periods.reshape(-1, 1)
-    added_snr = np.tile(added_snr, n_periods).reshape(n_periods, n_ecl)
-    # put the zero point at a specific place between the eclipses
-    zero_point = (ecl_mid[0] + periods / 4)
-    phases = fold_time_series(ecl_mid, periods, zero=zero_point).astype(ldtype)
-    group_1 = (phases <= 0)
-    group_2 = (phases > 0)
-    n_g1 = np.sum(group_1, axis=-1, dtype=np.int32)
-    n_g2 = np.sum(group_2, axis=-1, dtype=np.int32)
-    not_empty = (n_g2 != 0)
-    n_p_ne = np.sum(not_empty)
-    # maximize the number of points that fall on a straight line in phase
-    avg_1 = np.average(phases, weights=group_1, axis=-1)
-    avg_1 = avg_1.reshape(n_periods, 1)
-    on_line = np.sum(np.abs(phases * group_1 - avg_1) < 0.01, axis=-1, dtype=ldtype)
-    avg_2 = np.average(phases[not_empty], weights=group_2[not_empty], axis=-1)
-    avg_2 = avg_2.reshape(n_p_ne, 1)
-    on_line[not_empty] += np.sum(np.abs(phases[not_empty] * group_2[not_empty] - avg_2) < 0.01, axis=-1, dtype=ldtype)
-    on_line /= (n_g1 + n_g2)
-    on_line += 0.01 * (on_line == 0)
-    # calculate deviations in phase
-    dev_1 = np.sum(np.abs(phases * group_1 - avg_1), axis=-1, dtype=ldtype)
-    phase_dev = dev_1 / n_g1
-    dev_2 = np.sum(np.abs(phases[not_empty] * group_2[not_empty] - avg_2), axis=-1, dtype=ldtype)
-    phase_dev[not_empty] = (dev_1[not_empty] + dev_2) / (n_g1[not_empty] + n_g2[not_empty])
-    phase_dev /= on_line
-    # calculate the deviations in the added_snr
-    avg_1 = np.average(added_snr, weights=group_1, axis=-1)
-    avg_1 = avg_1.reshape(n_periods, 1)
-    dev_1 = np.sum(np.abs(added_snr * group_1 - avg_1), axis=-1) / 100
-    snr_dev = dev_1 / n_g1
-    avg_2 = np.average(added_snr[not_empty], weights=group_2[not_empty], axis=-1)
-    avg_2 = avg_2.reshape(n_p_ne, 1)
-    dev_2 = np.sum(np.abs(added_snr[not_empty] * group_2[not_empty] - avg_2), axis=-1) / 100
-    snr_dev[not_empty] = (dev_1[not_empty] + dev_2) / (n_g1[not_empty] + n_g2[not_empty])
-    snr_dev /= on_line
-    return phases, phase_dev, snr_dev
-
-
-def measure_phase_dev(periods, ecl_mid, added_snr):
-    """Measures how closely the phase folded eclipses are grouped in phase space,
-    as well as in the added_snr statistic.
-    Folds the times of eclipse midpoints by a given set of periods and measures the
-    median absolute deviation (MAD) of the phases.
-    Returns the phases and the total MADs.
-    """
-    ldtype = np.float32  # halve the space needed (local-dtype)
-    # prepare the period array
-    n_periods = len(periods)
-    n_ecl = len(ecl_mid)
-    periods = periods.reshape(-1, 1)
-    added_snr = np.tile(added_snr, n_periods).reshape(n_periods, n_ecl)
     # put the zero point at a specific place between the eclipses
     zero_point = ecl_mid[0]
-    phases = fold_time_series(ecl_mid, periods, zero=zero_point).astype(ldtype)
-    n_ecl = len(ecl_mid)
+    phases = fold_time_series(ecl_mid, periods, zero=zero_point)
     # calculate deviations in phase
-    avg_1 = np.average(phases, axis=-1)
-    avg_1 = avg_1.reshape(n_periods, 1)
-    dev_1 = np.sum(np.abs(phases - avg_1), axis=-1, dtype=ldtype)
-    phase_dev = dev_1 / n_ecl
+    dev = np.zeros(n_periods)
+    for i in range(n_periods):
+        dev[i] = np.sum(np.abs(phases[i] - np.mean(phases[i])))
+    phase_dev = dev / n_ecl
     return phases, phase_dev
 
 
+@nb.njit(cache=True)
 def test_separation(variable, group_1, group_2, phase=False):
     """Simple test to see whether the variable is split into separate
     distributions or not using the phases. If no variable is given of
@@ -1343,12 +1195,12 @@ def test_separation(variable, group_1, group_2, phase=False):
         separate = False
     elif (n_g1 + n_g2 < 8):
         # for very low numbers, use 50 percent difference as criterion
-        g1_avg = np.average(variable[group_1])
-        g2_avg = np.average(variable[group_2])
+        g1_avg = np.mean(variable[group_1])
+        g2_avg = np.mean(variable[group_2])
         separate = (max(g1_avg, g2_avg) > 1.5 * min(g1_avg, g2_avg))
     else:
-        g1_avg = np.average(variable[group_1])
-        g2_avg = np.average(variable[group_2])
+        g1_avg = np.mean(variable[group_1])
+        g2_avg = np.mean(variable[group_2])
         g1_std = np.std(variable[group_1])
         g2_std = np.std(variable[group_2])
         std = max(g1_std, g2_std)
@@ -1356,22 +1208,23 @@ def test_separation(variable, group_1, group_2, phase=False):
     return separate
 
 
+@nb.njit(cache=True)
 def determine_primary(group_1, group_2, depths, widths, added_snr):
-    n_g1 = np.sum(group_1)
-    n_g2 = np.sum(group_2)
+    n_g1 = len(added_snr[group_1])
+    n_g2 = len(added_snr[group_2])
     if ((n_g1 != 0) & (n_g2 != 0)):
         if test_separation(depths, group_1, group_2):
             # separation by eclipse depth
-            primary_g1 = (np.average(depths[group_1]) > np.average(depths[group_2]))
+            primary_g1 = (np.mean(depths[group_1]) > np.mean(depths[group_2]))
         elif test_separation(added_snr, group_1, group_2):
             # separation by added_snr
-            primary_g1 = (np.average(added_snr[group_1]) > np.average(added_snr[group_2]))
+            primary_g1 = (np.mean(added_snr[group_1]) > np.mean(added_snr[group_2]))
         elif test_separation(widths, group_1, group_2):
             # separation by eclipse width
-            primary_g1 = (np.average(widths[group_1]) > np.average(widths[group_2]))
+            primary_g1 = (np.mean(widths[group_1]) > np.mean(widths[group_2]))
         else:
             # no clear separation or separate_p: take the group with highest average added_snr
-            primary_g1 = (np.average(added_snr[group_1]) > np.average(added_snr[group_2]))
+            primary_g1 = (np.mean(added_snr[group_1]) > np.mean(added_snr[group_2]))
     else:
         if ((n_g1 == 0) & (n_g2 != 0)):
             primary_g1 = False  # cannot discern between p and s
@@ -1389,13 +1242,13 @@ def estimate_period(ecl_mid, widths, depths, added_snr, flags):
     """
     n_ecl = len(ecl_mid)
     ecl_i = np.arange(n_ecl)
-    m_full = np.char.startswith(flags, 'f')
+    m_full = (flags == 0)
     n_full_ecl = np.sum(m_full)
     # first establish an estimate of the period
     if (n_ecl < 2):
         # no eclipses or a single eclipse... return None
         ecl_period = None
-        ecl_included = []
+        ecl_included = np.zeros(0, dtype=int)
     elif (n_ecl == 2):
         # only two eclipses... only one guess possible
         ecl_period = abs(ecl_mid[1] - ecl_mid[0])
@@ -1403,7 +1256,7 @@ def estimate_period(ecl_mid, widths, depths, added_snr, flags):
         if (ecl_period < 0.01):
             # chance that it overlaps
             ecl_period = None
-            ecl_included = []
+            ecl_included = np.zeros(0, dtype=int)
     else:
         # sort the eclipses first
         ecl_sorter = np.argsort(ecl_mid)
@@ -1418,7 +1271,7 @@ def estimate_period(ecl_mid, widths, depths, added_snr, flags):
         time_frame[0] -= time_padding
         time_frame[1] += time_padding
         # set the reference zero-point eclipse
-        snr_ref = max(np.average(added_snr), 0.5 * np.max(added_snr))
+        snr_ref = max(np.mean(added_snr), 0.5 * np.max(added_snr))
         ecl_i = np.arange(len(ecl_mid))
         high_snr = (added_snr > snr_ref)
         ecl_0 = ecl_i[added_snr >= np.median(added_snr[high_snr])][0]
@@ -1436,19 +1289,19 @@ def estimate_period(ecl_mid, widths, depths, added_snr, flags):
             p_best = periods[best]
             ecl_period = p_best
             # fig, ax = plt.subplots()
-            # ax.plot(periods, gof)
+            # ax.plot(periods, gof, marker='|')
             # get the eclipse indices of those matching the pattern
             ecl_included = extract_pattern(ecl_mid, widths, ecl_0, ecl_period, time_frame)
             # refine the period (using all included eclipses)
-            dp = 3 * np.average(np.diff(periods))
+            dp = 3 * np.mean(np.diff(periods))
             period_range = np.arange(p_best - dp, p_best + dp, dp / 300)
-            all_phases, phase_dev = measure_phase_dev(period_range, ecl_mid[ecl_included], added_snr[ecl_included])
+            all_phases, phase_dev = measure_phase_dev(period_range, ecl_mid[ecl_included])
             ecl_period = period_range[np.argmin(phase_dev)]
             # ax.plot(period_range, phase_dev)
             # plt.show()
         else:
             ecl_period = None
-            ecl_included = []
+            ecl_included = np.zeros(0, dtype=int)
     # now better determine the primaries and secondaries and other/tertiaries
     if ecl_period is not None:
         # try double the eclipse period to look for secondaries
@@ -1477,22 +1330,22 @@ def estimate_period(ecl_mid, widths, depths, added_snr, flags):
         if not double_p_sep:
             # Try finding eclipses in between the eclipses (possibly at a different phase).
             g1 = ecl_included
-            g2 = []
+            g2 = np.zeros(0, dtype=int)
             not_included = np.setxor1d(ecl_i, ecl_included)
             if (len(not_included) > 0):
                 phases = fold_time_series(ecl_mid, ecl_period, zero=(t_0 + ecl_period / 4))
-                g1_avg_phase = np.average(phases[g1])
+                g1_avg_phase = np.mean(phases[g1])
                 hist, edges = np.histogram(phases[not_included], bins=50)
                 not_g1 = (edges[:-1] < g1_avg_phase - 0.04) | (edges[1:] > g1_avg_phase + 0.04)
                 if np.any(not_g1):
                     hist_max = np.argmax(hist[not_g1])
                     in_bin = (phases >= edges[:-1][not_g1][hist_max]) & (phases <= edges[1:][not_g1][hist_max])
-                    avg_phase = np.average(phases[in_bin])
+                    avg_phase = np.mean(phases[in_bin])
                     g2 = not_included[(np.abs(phases[not_included] - avg_phase) < 0.02)]
         # refine the groups by selecting a small phase delta (giving full eclipses an advantage)
         # beware eclipses that are within the phase delta but less than the period away
         phases = fold_time_series(ecl_mid, ecl_period, zero=(t_0 + ecl_period / 4))
-        g1_avg_phase = np.average(phases[g1])
+        g1_avg_phase = np.mean(phases[g1])
         g1_bool = (np.abs(phases - g1_avg_phase) < 0.02)
         g1_bool[m_full] |= (np.abs(phases[m_full] - g1_avg_phase) < 0.04)
         # check for eclipses less than a period away (we only want to add any missing eclipses)
@@ -1500,42 +1353,43 @@ def estimate_period(ecl_mid, widths, depths, added_snr, flags):
             g1_bool[g1_bool] &= (np.abs(ecl_mid[g1_bool] - ecl_mid[i]) > 0.5 * ecl_period)
             g1_bool[i] = True
         g1 = ecl_i[g1_bool]
-        g2_avg_phase = np.average(phases[g2])
-        g2_bool = (np.abs(phases - g2_avg_phase) < 0.02)
-        g2_bool[m_full] |= (np.abs(phases[m_full] - g2_avg_phase) < 0.04)
-        for i in g2:
-            g2_bool[g2_bool] &= (np.abs(ecl_mid[g2_bool] - ecl_mid[i]) > 0.5 * ecl_period)
-            g2_bool[i] = True
-        g2 = ecl_i[g2_bool]
+        if (len(g2) > 0):
+            g2_avg_phase = np.mean(phases[g2])
+            g2_bool = (np.abs(phases - g2_avg_phase) < 0.02)
+            g2_bool[m_full] |= (np.abs(phases[m_full] - g2_avg_phase) < 0.04)
+            for i in g2:
+                g2_bool[g2_bool] &= (np.abs(ecl_mid[g2_bool] - ecl_mid[i]) > 0.5 * ecl_period)
+                g2_bool[i] = True
+            g2 = ecl_i[g2_bool]
         # check for eclipses that include wide gaps (or are too narrow)
-        g1_avg_w = np.average(widths[g1])
+        g1_avg_w = np.mean(widths[g1])
         g1 = g1[(widths[g1] > 0.4 * g1_avg_w) & (widths[g1] < 1.9 * g1_avg_w)]
-        g2_avg_w = np.average(widths[g2])
-        g2 = g2[(widths[g2] > 0.4 * g1_avg_w) & (widths[g2] < 1.9 * g2_avg_w)]
+        if (len(g2) > 0):
+            g2_avg_w = np.mean(widths[g2])
+            g2 = g2[(widths[g2] > 0.4 * g1_avg_w) & (widths[g2] < 1.9 * g2_avg_w)]
         # determine which group is primary/secondary if possible (from the full eclipses)
         # check if group 2 is too small
         if (len(g2) < max(2, 0.05 * len(g1))):
             # more likely noise
-            g2 = []
+            g2 = np.zeros(0, dtype=int)
             primary_g1 = True
         else:
             primary_g1 = determine_primary(g1, g2, depths, widths, added_snr)
         # make the primary/secondary/tertiary flags_pst
-        flags_pst = np.zeros([len(ecl_mid)], dtype=str)
-        flags_pst[g1] = 'p' * primary_g1 + 's' * (not primary_g1)
-        flags_pst[g2] = 'p' * (not primary_g1) + 's' * primary_g1
-        flags_pst[np.setxor1d(ecl_i, np.append(g1, g2).astype(int))] = 't'
+        flags_pst = np.zeros(len(ecl_mid), dtype=int)
+        flags_pst[g1] = 1 * primary_g1 + 2 * (not primary_g1)
+        flags_pst[g2] = 1 * (not primary_g1) + 2 * primary_g1
+        flags_pst[flags_pst == 0] = 3
         # if only two primaries selected, check their likeness
-        primaries = (flags_pst == 'p')
+        primaries = (flags_pst == 1)
         if (len(added_snr[primaries]) == 2):
-            prim_ecl_i = ecl_i[primaries]
             if np.any(added_snr[primaries] < added_snr[primaries][::-1] / 2):
-                # if they are too different, revoke all prim/sec and the period
-                flags_pst[primaries] = 't'
-                flags_pst[flags_pst == 's'] = 't'
+                # if they are too different, revoke all prim/sec status and the period
+                flags_pst[primaries] = 3
+                flags_pst[flags_pst == 2] = 3
                 ecl_period = None
         # finally, put the t_zero on the first full primary eclipse
-        primaries = (flags_pst == 'p')
+        primaries = (flags_pst == 1)
         full_primaries = m_full & primaries
         if np.any(full_primaries):
             t_zero = ecl_mid[full_primaries][0]
@@ -1546,16 +1400,16 @@ def estimate_period(ecl_mid, widths, depths, added_snr, flags):
             ecl_period = None
     else:
         t_zero = None
-        flags_pst = np.full_like(ecl_mid, 't', dtype=str)
+        flags_pst = 3 * np.ones(len(ecl_mid), dtype=int)
     return t_zero, ecl_period, flags_pst
 
 
 def plot_period_diagnostics(times, signal, signal_s, ecl_indices, ecl_mid, widths, depths, flags, flags_pst, period):
     """Plot the signal, mark primary and secondary eclipses and plot the period."""
-    full = np.char.startswith(flags, 'f')
-    prim = np.char.startswith(flags_pst, 'p')
-    sec = np.char.startswith(flags_pst, 's')
-    tert = np.char.startswith(flags_pst, 't')
+    full = (flags == 0)
+    prim = (flags_pst == 1)
+    sec = (flags_pst == 2)
+    tert = (flags_pst == 3)
     if (len(ecl_indices) != 0):
         ecl_mask = mask_eclipses(times, ecl_indices[:, [0, -1]])
         ecl_bottom_mask = mask_eclipses(times, ecl_indices[:, [1, -2]])
@@ -1635,40 +1489,44 @@ def find_ephemeris(times, signal, n_kernel, diagnostic_plot=False):
     return t_0, period, flags_pst
 
 
+@nb.njit(cache=True)
 def found_ratio(times, ecl_mid, prim, sec, period, n_found):
     if period is None:
         n_possible = 1
     elif (period > 0):
         gaps, gap_widths = mark_gaps(times)
-        gap_times = np.concatenate([[times[0]], times[gaps], [times[-1]]])
+        gaps[0] = True
+        gaps[-1] = True
+        gap_times = times[gaps]
+        gaps_i = np.arange(len(times))[gaps]
         # primaries
         if np.any(prim):
             t_0 = ecl_mid[prim][0]
             possible_prim = np.arange(t_0, times[0], -period)[::-1]
-            possible_prim = np.append(possible_prim, np.arange(t_0, times[-1], period))
+            possible_prim = np.append(possible_prim, np.arange(t_0, times[-1], period)[1:])
             # count only possible eclipses where there is data coverage
-            mask = np.zeros([len(possible_prim)], dtype=bool)
-            for gt1, gt2 in zip(gap_times[:-1], gap_times[1:]):
-                if np.any((times > gt1) & (times < gt2)):
+            mask = np.ones(len(possible_prim), dtype=np.bool_)
+            for i, j in zip(gaps_i[:-1], gaps_i[1:]):
+                if (j - i == 1):
                     # there is coverage between these points
-                    mask |= ((possible_prim > gt1) & (possible_prim < gt2))
+                    mask = mask & ((possible_prim < times[i]) | (possible_prim > times[j]))
             possible_prim = possible_prim[mask]
         else:
-            possible_prim = []
+            possible_prim = np.zeros(0)
         # secondaries
         if np.any(sec):
             t_0 = ecl_mid[sec][0]
             possible_sec = np.arange(t_0, times[0], -period)[::-1]
             possible_sec = np.append(possible_sec, np.arange(t_0, times[-1], period))
             # count only possible eclipses where there is data coverage
-            mask = np.zeros([len(possible_sec)], dtype=bool)
-            for gt1, gt2 in zip(gap_times[:-1], gap_times[1:]):
-                if np.any((times > gt1) & (times < gt2)):
+            mask = np.ones(len(possible_sec), dtype=np.bool_)
+            for i, j in zip(gaps_i[:-1], gaps_i[1:]):
+                if (j - i == 1):
                     # there is coverage between these points
-                    mask |= ((possible_sec > gt1) & (possible_sec < gt2))
+                    mask = mask & ((possible_sec < times[i]) | (possible_sec > times[j]))
             possible_sec = possible_sec[mask]
         else:
-            possible_sec = []
+            possible_sec = np.zeros(0)
         # combine into one number
         n_possible = len(possible_prim) + len(possible_sec)
     else:
@@ -1685,7 +1543,7 @@ def found_ratio(times, ecl_mid, prim, sec, period, n_found):
     return found_ratio
 
 
-@nb.jit(nopython=True)
+@nb.njit(cache=True)
 def normalised_slope(times, signal_s, deriv_1r, ecl_indices, ecl_mask, prim_sec, m_full):
     """Calculate the average slope of the eclipses and normalise it by
     the median derivative of the light curve outside the eclipses.
@@ -1713,7 +1571,7 @@ def normalised_slope(times, signal_s, deriv_1r, ecl_indices, ecl_mask, prim_sec,
     return np.mean(slope) / norm_factor
 
 
-@nb.jit(nopython=True)
+@nb.njit(cache=True)
 def normalised_symmetry(times, signal, ecl_indices):
     if (len(ecl_indices) == 0):
         symmetry = 1
@@ -1733,7 +1591,7 @@ def normalised_symmetry(times, signal, ecl_indices):
     return symmetry
 
 
-@nb.jit(nopython=True)
+@nb.njit(cache=True)
 def normalised_equality(added_snr, depths, widths, prim, sec):
     """Calculate the deviations"""
     n_prim = len(added_snr[prim])
@@ -1770,25 +1628,26 @@ def normalised_equality(added_snr, depths, widths, prim, sec):
     return equality
 
 
+@nb.njit(cache=True)
 def eclipse_confidence(times, signal_s, deriv_1r, period, ecl_indices, ecl_mid, added_snr, widths, depths,
-                       flags, flags_pst, return_all=False):
+                       flags, flags_pst):
     """Determine a number that expresses the confidence that we have found actual eclipses.
     Below ... is probably a false positive, above ... is quite probably and EB.
     """
     if (len(ecl_mid) != 0):
-        primaries = (flags_pst == 'p')
-        secondaries = (flags_pst == 's')
-        prim_sec = primaries | secondaries
-        m_full = np.char.startswith(flags, 'f')
+        primaries = (flags_pst == 1)
+        secondaries = (flags_pst == 2)
+        prim_sec = (primaries | secondaries)
+        m_full = (flags == 0)
         ecl_mask = mask_eclipses(times, ecl_indices[prim_sec])
         n_found = len(ecl_mid[prim_sec])
         if (n_found != 0):
             if np.any(primaries):
-                avg_p = np.average(added_snr[primaries])
+                avg_p = np.mean(added_snr[primaries])
             else:
                 avg_p = 0
             if np.any(secondaries):
-                avg_s = np.average(added_snr[secondaries])
+                avg_s = np.mean(added_snr[secondaries])
             else:
                 avg_s = 0
             # convert the added_snr to a value between 0 and 1
@@ -1821,93 +1680,116 @@ def eclipse_confidence(times, signal_s, deriv_1r, period, ecl_indices, ecl_mid, 
         confidence = -1
         ratio_0, ratio_1, ratio_2, ratio_3, ratio_4 = -0.1, -0.1, -0.1, -0.1, -0.1
         penalty = 0
-    if return_all:
-        return confidence, ratio_0, ratio_1, ratio_2, ratio_3, ratio_4, penalty
-    return confidence
+    return confidence, ratio_0, ratio_1, ratio_2, ratio_3, ratio_4, penalty
 
 
+@nb.njit(cache=True)
 def eclipse_stats(flags_pst, widths, depths):
     """Measures the average width and depth for the primary and for the
     secondary eclipses, plus the standard deviations.
     """
-    prim = (flags_pst == 'p')
-    sec = (flags_pst == 's')
-    width_p = [np.average(widths[prim]), np.std(widths[prim])]
-    depth_p = [np.average(depths[prim]), np.std(depths[prim])]
-    if np.any(sec):
-        width_s = [np.average(widths[sec]), np.std(widths[sec])]
-        depth_s = [np.average(depths[sec]), np.std(depths[sec])]
-    else:
-        width_s = [-1, -1]
-        depth_s = [-1, -1]
-    width_stats = np.column_stack([width_p, width_s])
-    depth_stats = np.column_stack([depth_p, depth_s])
+    width_stats = -np.ones((2, 2), dtype=np.int_)
+    depth_stats = -np.ones((2, 2), dtype=np.int_)
+    if (len(flags_pst) > 0):
+        prim = (flags_pst == 1)
+        sec = (flags_pst == 2)
+        if np.any(prim):
+            width_stats[0] = np.mean(widths[prim]), np.std(widths[prim])
+            depth_stats[0] = np.mean(depths[prim]), np.std(depths[prim])
+        if np.any(sec):
+            width_stats[1] = np.mean(widths[sec]), np.std(widths[sec])
+            depth_stats[1] = np.mean(depths[sec]), np.std(depths[sec])
     return width_stats, depth_stats
 
 
-def find_all(times, signal, mode=1, rescale=True, max_n=80, dev_limit=1.8):
+def interpret_flags(flags, flags_pst):
+    """Converts the flags from integers to strings for easier interpretation.
+    in flags:
+    0 is 'f' meaning full eclipse
+    1 is 'lh' meaning left half of an eclipse (ingress)
+    2 is 'rh' meaning right half of an eclipse (egress)
+    in flags_pst:
+    1 is 'p' meaning primary
+    2 is 's' meaning secondary
+    3 is 't' meaning other or possible tertiary
+    """
+    flags_str = np.zeros(len(flags), dtype='<U2')
+    flags_str[flags == 0] = 'f'
+    flags_str[flags == 1] = 'lh'
+    flags_str[flags == 2] = 'rh'
+    flags_pst_str = np.zeros(len(flags_pst), dtype='<U2')
+    flags_pst_str[flags_pst == 1] = 'p'
+    flags_pst_str[flags_pst == 2] = 's'
+    flags_pst_str[flags_pst == 3] = 't'
+    return flags_str, flags_pst_str
+
+
+def find_all(times, signal, mode=1, rescale=True, max_n=80):
     """Find the eclipses, ephemeris and the statistics about the eclipses.
     There are several modes of operation:
     1: Only find and return the ephemeris and confidence level
     2: Find and return the ephemeris, confidence level and individual eclipse
         midpoints, widths, depths and bottom ratios, plus p/s/t flags
-    3: Same as 2, but also returns all eclipse indices and the added_snr statistic
-    4: Find and return the ephemeris, confidence level and collective stats
+    3: Find and return the ephemeris, confidence level and collective stats
         about the eclipse widths and depths (mean and std)
-    5: Return everything
+    4: Return everything
     -1: Turn on diagnostic plots and return everything
     """
     # set diagnostic plots on or off
-    dp = False
+    dplot = False
     if (mode == -1):
-        dp = True
+        dplot = True
     # rescale the different (TESS) sectors
     if rescale:
-        signal, thr_mask = rescale_tess(times, signal, diagnostic_plot=dp)
+        if dplot:
+            s_copy, thr_mask, avg, low, high, thrh, m_sect, jd_sect = rescale_tess(times, signal, diagnostic_plot=dplot)
+            rescale_tess_dplot(times, signal, s_copy, avg, low, high, thrh, m_sect, jd_sect)
+            signal = s_copy
+        else:
+            signal, thr_mask = rescale_tess(times, signal)
         times = times[thr_mask]
         signal = signal[thr_mask]
     # find the best number of smoothing points
-    n_kernel = find_best_n(times, signal, max_n=max_n, dev_limit=dev_limit, diagnostic_plot=dp)
-    # do the derivatives
+    if dplot:
+        n_kernel, n_range, dev, opt, sine_like = find_best_n(times, signal, max_n=max_n, diagnostic_plot=dplot)
+        find_best_n_dplot(n_range, dev, opt, sine_like, n_kernel)
+    else:
+        n_kernel = find_best_n(times, signal, max_n=max_n)
+    # calculate the derivatives
     signal_s, r_derivs, s_derivs = prepare_derivatives(times, signal, n_kernel)
-    # get the likely eclipse indices from the derivatives
+    # get the likely eclipse indices from the derivatives and assemble eclipse halves
     peaks, added_snr, slope_sign, sine_like = mark_eclipses(times, signal_s, s_derivs, r_derivs, n_kernel)
     ecl_indices, added_snr, flags = assemble_eclipses(times, signal, signal_s, peaks, added_snr, slope_sign)
-    if dp:
+    if dplot:
         plot_marker_diagnostics(times, signal, signal_s, s_derivs, peaks, ecl_indices, flags)
-    # check if any where found
-    if (len(ecl_indices) != 0):
-        # take some measurements and find the period if possible
+    # check if any eclipses were found, then take some measurements and find the period if possible
+    if (len(flags) != 0):
+        # take some measurements
         ecl_mid, widths, depths, ratios = measure_eclipses(times, signal_s, ecl_indices, flags)
+        # find a possible period in the eclipses
         t_0, period, flags_pst = estimate_period(ecl_mid, widths, depths, added_snr, flags)
-        if dp:
+        if dplot:
             plot_period_diagnostics(times, signal, signal_s, ecl_indices, ecl_mid, widths, depths,
                                     flags, flags_pst, period)
-    else:
-        ecl_mid, widths, depths, ratios = np.array([[], [], [], []])
-        t_0, period, flags_pst = -1, -1, np.array([])
-    # check if any primary eclipses were found
-    if (len(flags_pst) != 0):
-        # determine the confidence level
+        # determine the eclipse confidence
         conf = eclipse_confidence(times, signal_s, r_derivs[0], period, ecl_indices, ecl_mid,
                                   added_snr, widths, depths, flags, flags_pst)
     else:
-        conf = -1
-    # check if the w/d statistics need to be calculated
-    if (conf != -1) & (mode in [4, 5, -1]):
-        # determine the collective characteristics
+        ecl_mid, widths, depths, ratios = np.array([[], [], [], []])
+        t_0, period, flags_pst, conf = -1, -1, np.array([]), -1
+    # check if the width/depth statistics (collective characteristics) need to be calculated
+    if mode in [4, 5, -1]:
         width_stats, depth_stats = eclipse_stats(flags_pst, widths, depths)
-    else:
-        width_stats = np.array([[-1, -1], [-1, -1]])
-        depth_stats = np.array([[-1, -1], [-1, -1]])
     # depending on the mode, return (part of) the results
     if (mode == 2):
-        return t_0, period, conf, ecl_mid, widths, depths, ratios, flags_pst
+        # return the most useful per-eclipse parameters
+        return t_0, period, conf, sine_like, n_kernel, \
+               ecl_mid, widths, depths, ratios, flags_pst, ecl_indices, added_snr
     elif (mode == 3):
-        return t_0, period, conf, ecl_mid, widths, depths, ratios, flags_pst, ecl_indices, added_snr
-    elif (mode == 4):
-        return t_0, period, conf, sine_like, width_stats, depth_stats
-    elif (mode in [5, -1]):
+        # return default plus width and depth stats
+        return t_0, period, conf, sine_like, n_kernel, width_stats, depth_stats
+    elif (mode in [4, -1]):
+        # return everything
         return t_0, period, conf, sine_like, n_kernel, width_stats, depth_stats, \
                ecl_mid, widths, depths, ratios, flags, flags_pst, ecl_indices, added_snr
     else:
@@ -1918,7 +1800,7 @@ def find_all(times, signal, mode=1, rescale=True, max_n=80, dev_limit=1.8):
 def ephem_test_from_file(file_name):
     times, signal = np.loadtxt(file_name, unpack=True)
     try:
-        result = find_all(times, signal, mode=5, rescale=False, max_n=80, dev_limit=1.8)
+        result = find_all(times, signal, mode=5, rescale=False, max_n=80)
     except:
         print(file_name)
     return result

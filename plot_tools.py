@@ -7,7 +7,7 @@ Code written by: Luc IJspeert
 import numpy as np
 import matplotlib.pyplot as plt
 
-from .eclipse_finding import mask_eclipses, fold_time_series
+from . import eclipse_finding as ecf
 
 
 def rescale_tess_dplot(times, signal, signal_copy, averages, low, high, threshold, mask_sect, jd_sectors):
@@ -103,8 +103,8 @@ def plot_period_diagnostics(times, signal, signal_s, ecl_indices, ecl_mid, width
     sec = (flags_pst == 2)
     tert = (flags_pst == 3)
     if (len(ecl_indices) != 0):
-        ecl_mask = mask_eclipses(times, ecl_indices[:, [0, -1]])
-        ecl_bottom_mask = mask_eclipses(times, ecl_indices[:, [1, -2]])
+        ecl_mask = ecf.mask_eclipses(times, ecl_indices[:, [0, -1]])
+        ecl_bottom_mask = ecf.mask_eclipses(times, ecl_indices[:, [1, -2]])
     else:
         ecl_mask = np.zeros([len(times)], dtype=bool)
         ecl_bottom_mask = np.zeros([len(times)], dtype=bool)
@@ -112,7 +112,7 @@ def plot_period_diagnostics(times, signal, signal_s, ecl_indices, ecl_mid, width
         t_0 = ecl_mid[prim][0]
         period_array = np.arange(t_0, times[0], -period)[::-1]
         period_array = np.append(period_array, np.arange(t_0, times[-1], period))
-        phases = fold_time_series(ecl_mid, period, (t_0 + period / 4))
+        phases = ecf.fold_time_series(ecl_mid, period, (t_0 + period / 4))
     else:
         phases = np.zeros([len(ecl_mid)])
     s_minmax = (np.max(signal) - np.min(signal))

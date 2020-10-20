@@ -7,7 +7,7 @@ Code written by: Luc IJspeert
 import numpy as np
 import astropy.io.fits as fits
 
-import eclipse_finding as ecf
+import .eclipse_finding as ecf
 
 
 def get_fits_data(file_name, index=0):

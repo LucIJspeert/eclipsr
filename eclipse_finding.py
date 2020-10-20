@@ -9,7 +9,7 @@ import scipy as sp
 import scipy.signal
 import numba as nb
 
-import plot_tools as pt
+import .plot_tools as pt
 
 
 @nb.njit(cache=True)

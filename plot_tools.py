@@ -7,7 +7,7 @@ Code written by: Luc IJspeert
 import numpy as np
 import matplotlib.pyplot as plt
 
-from eclipse_finding import mask_eclipses, fold_time_series
+from .eclipse_finding import mask_eclipses, fold_time_series
 
 
 def rescale_tess_dplot(times, signal, signal_copy, averages, low, high, threshold, mask_sect, jd_sectors):

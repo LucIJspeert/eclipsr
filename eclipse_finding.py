@@ -1,4 +1,7 @@
-"""This module contains functions to find eclipses, measure their properties and
+"""ECLIPSR
+Eclipse Candidates in Light curves and Inference of Period at a Speedy Rate
+
+This module contains functions to find eclipses, measure their properties and
 do various miscellaneous things with them (or on arrays in general).
 
 Code written by: Luc IJspeert

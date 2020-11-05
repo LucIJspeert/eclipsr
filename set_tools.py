@@ -1,4 +1,6 @@
-"""This module contains functions to analyse (large) sets of light curves
+"""ECLIPSR
+
+This module contains functions to analyse (large) sets of light curves
 using parallelisation.
 
 Code written by: Luc IJspeert

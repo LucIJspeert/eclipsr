@@ -1,4 +1,6 @@
-"""This module contains functions to make (diagnostic) plots
+"""ECLIPSR
+
+This module contains functions to make (diagnostic) plots
 for various stages of the eclipse finding.
 
 Code written by: Luc IJspeert

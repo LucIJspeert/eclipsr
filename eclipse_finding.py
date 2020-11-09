@@ -7,6 +7,7 @@ do various miscellaneous things with them (or on arrays in general).
 Code written by: Luc IJspeert
 """
 
+import os
 import numpy as np
 import scipy as sp
 import scipy.signal
@@ -49,7 +50,8 @@ def rescale_tess(times, signal, bjd_ref=2457000.0, diagnostic_plot=False):
     This rescaling will make sure the rest of eclipse finding goes as intended.
     """
     # the 0.5 offset comes from test results, and the fact that no exact JD were found (just calendar days)
-    jd_sectors = np.loadtxt('tess_sectors.dat', usecols=(2, 3)) - bjd_ref
+    script_dir = os.path.dirname(os.path.abspath(__file__))  # absolute dir the script is in
+    jd_sectors = np.loadtxt(os.path.join(script_dir, 'tess_sectors.dat'), usecols=(2, 3)) - bjd_ref
     signal_copy = np.copy(signal)
     mask_sect = [(times > sect[0]) & (times < sect[1]) for sect in jd_sectors]
     # determine the range of the signal
@@ -1495,6 +1497,59 @@ def normalised_equality(added_snr, depths, widths, prim, sec):
 
 @nb.njit(cache=True)
 def eclipse_confidence(times, signal_s, deriv_1r, period, ecl_indices, ecl_mid, added_snr, widths, depths,
+                       flags, flags_pst):
+    """Determine a number that expresses the confidence that we have found actual eclipses.
+    Below 0.42 is probably a false positive, above 0.42 is quite probably and EB.
+    """
+    if (len(ecl_mid) != 0):
+        primaries = (flags_pst == 1)
+        secondaries = (flags_pst == 2)
+        prim_sec = (primaries | secondaries)
+        m_full = (flags == 0)
+        ecl_mask = mask_eclipses(times, ecl_indices[prim_sec])
+        n_found = len(ecl_mid[prim_sec])
+        if (n_found != 0):
+            if np.any(primaries):
+                avg_p = np.mean(added_snr[primaries])
+            else:
+                avg_p = 0
+            if np.any(secondaries):
+                avg_s = np.mean(added_snr[secondaries])
+            else:
+                avg_s = 0
+            # convert the added_snr to a value between 0 and 1
+            attr_0 = np.arctan((avg_p + avg_s) / 40) * 2 / (np.pi)
+            # the number of ecl vs number of theoretically visible ones
+            attr_1 = found_ratio(times, ecl_mid, primaries, secondaries, period, n_found)
+            # slope of the eclipses - higher is more likely an actual eclipse
+            attr_2 = normalised_slope(times, signal_s, deriv_1r, ecl_indices, ecl_mask, primaries, m_full)
+            # if np.any(secondaries):
+            #     attr_2 += normalised_slope(times, signal_s, deriv_1r, ecl_indices, ecl_mask, secondaries, m_full)
+            attr_2 = np.arctan(attr_2 / 2.5) * 2 / (np.pi)
+            # the more unequal the eclipse in/egress are, the lower the confidence
+            attr_3 = normalised_symmetry(times, signal_s, ecl_indices[m_full & prim_sec])
+            # if eclipse depth varies a lot - might just be pulsations
+            
+            attr_4 = normalised_equality(added_snr, depths, widths, primaries, secondaries)
+            # penalty for not having any full eclipses
+            penalty = 1 - 0.5 * (not np.any(m_full & prim_sec))
+            confidence = attr_0 * attr_2 * np.sqrt(attr_1**2 + attr_2**2 + attr_3**2 + attr_4**2) / 2
+            confidence *= penalty
+        else:
+            # still have the possibility of a single eclipse (so without period)
+            attr_0 = np.arctan(np.max(added_snr) / 600) * 2 / (np.pi)
+            attr_2 = normalised_slope(times, signal_s, deriv_1r, ecl_indices, ecl_mask, np.invert(prim_sec), m_full)
+            attr_2 = np.arctan(attr_2 / 2.5) * 2 / (np.pi)
+            penalty = 1 - 0.5 * (not np.any(m_full))
+            confidence = attr_0 * attr_2 * penalty
+    else:
+        # no eclipses identified
+        confidence = -1
+    return confidence
+
+
+@nb.njit(cache=True)
+def eclipse_confidence_attr(times, signal_s, deriv_1r, period, ecl_indices, ecl_mid, added_snr, widths, depths,
                        flags, flags_pst):
     """Determine a number that expresses the confidence that we have found actual eclipses.
     Below 0.42 is probably a false positive, above 0.42 is quite probably and EB.

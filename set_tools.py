@@ -29,6 +29,7 @@ def ephem_test_from_file(file_name):
     try:
         result = ecf.find_all(times, signal, mode=5, rescale=False, max_n=80)
     except:
+        # an error happened in the following file
         print(file_name)
     return result
 
@@ -36,8 +37,9 @@ def ephem_test_from_file(file_name):
 def ephem_test_from_csv(file_name):
     signal, times = np.loadtxt(file_name, skiprows=1, delimiter=',', unpack=True)
     try:
-        result = ecf.find_all(times, signal, mode=5, rescale=False, max_n=80)
+        result = ecf.find_all(times, signal, mode=5, rescale=True, max_n=80)
     except:
+        # an error happened in the following file
         print(file_name)
     return result
 

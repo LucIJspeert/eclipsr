@@ -33,6 +33,15 @@ def ephem_test_from_file(file_name):
     return result
 
 
+def ephem_test_from_csv(file_name):
+    signal, times = np.loadtxt(file_name, skiprows=1, delimiter=',', unpack=True)
+    try:
+        result = ecf.find_all(times, signal, mode=5, rescale=False, max_n=80)
+    except:
+        print(file_name)
+    return result
+
+
 def ephem_from_tic(tic, all_files=None):
     tic_files = [file for file in all_files if f'-{tic:016.0f}-' in file]
     times = np.array([])

@@ -1058,11 +1058,11 @@ def pattern_test(ecl_mid, added_snr, widths, time_frame, ecl_0=None, p_max=None,
 
 
 @nb.njit(cache=True)
-def extract_pattern(ecl_mid, widths, ecl_0, ecl_period, time_frame):
+def extract_pattern(ecl_mid, widths, t_0, ecl_period, time_frame):
     """Get the indices of the eclipses matching the pattern.
     See: pattern_test
     """
-    pattern, n_range = construct_range(ecl_mid[ecl_0], ecl_period, time_frame)
+    pattern, n_range = construct_range(t_0, ecl_period, time_frame)
     # get nearest neighbour in pattern for each ecl_mid by looking to the left and right of the sorted position
     i_nn = np.searchsorted(pattern, ecl_mid)
     i_nn[i_nn == len(pattern)] = len(pattern) - 1
@@ -1214,7 +1214,7 @@ def estimate_period(ecl_mid, widths, depths, added_snr, flags):
             # fig, ax = plt.subplots()
             # ax.plot(periods, gof, marker='|')
             # get the eclipse indices of those matching the pattern
-            ecl_included = extract_pattern(ecl_mid, widths, ecl_0, ecl_period, time_frame)
+            ecl_included = extract_pattern(ecl_mid, widths, ecl_mid[ecl_0], ecl_period, time_frame)
             # refine the period (using all included eclipses)
             dp = 3 * np.mean(np.diff(periods))
             period_range = np.arange(p_best - dp, p_best + dp, dp / 300)

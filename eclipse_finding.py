@@ -43,30 +43,41 @@ def mask_eclipses(times, eclipses):
     return mask
 
 
-def rescale_tess(times, signal, bjd_ref=2457000.0, diagnostic_plot=False):
+def get_tess_sectors(times, bjd_ref=2457000.0):
+    """Load the times of the TESS sectors from a file and return a set of
+    indices indicating the separate sectors in the time series.
+    """
+    # the 0.5 offset comes from test results, and the fact that no exact JD were found (just calendar days)
+    script_dir = os.path.dirname(os.path.abspath(__file__))  # absolute dir the script is in
+    jd_sectors = np.loadtxt(os.path.join(script_dir, 'tess_sectors.dat'), usecols=(2, 3)) - bjd_ref
+    # use a quick searchsorted to get the positions of the sector transitions
+    i_start = np.searchsorted(times, jd_sectors[:, 0])
+    i_end = np.searchsorted(times, jd_sectors[:, 1])
+    sectors_included = (i_start != i_end)  # this tells which sectors it received data for
+    i_sectors = np.column_stack([i_start[sectors_included], i_end[sectors_included]])
+    return i_sectors
+
+
+@nb.njit(cache=True)
+def rescale_tess(times, signal, i_sectors):
     """Scales different TESS sectors by a constant to make them match in amplitude.
     times are in TESS bjd by default, but a different bjd_ref can be given to use
     a different time reference point.
     This rescaling will make sure the rest of eclipse finding goes as intended.
     """
-    # the 0.5 offset comes from test results, and the fact that no exact JD were found (just calendar days)
-    script_dir = os.path.dirname(os.path.abspath(__file__))  # absolute dir the script is in
-    jd_sectors = np.loadtxt(os.path.join(script_dir, 'tess_sectors.dat'), usecols=(2, 3)) - bjd_ref
     signal_copy = np.copy(signal)
-    mask_sect = [(times > sect[0]) & (times < sect[1]) for sect in jd_sectors]
     # determine the range of the signal
-    low = np.zeros([len(jd_sectors)])
-    high = np.zeros([len(jd_sectors)])
-    averages = np.zeros([len(jd_sectors)])
-    threshold = np.zeros([len(jd_sectors)])
-    for i, mask in enumerate(mask_sect):
-        if np.any(mask):
-            masked_s = signal[mask]
-            averages[i] = np.average(masked_s)
-            low[i] = np.average(masked_s[masked_s < averages[i]])
-            high[i] = np.average(masked_s[masked_s > averages[i]])
-            threshold[i] = np.average(masked_s[masked_s > high[i]])
-            threshold[i] = np.average(masked_s[masked_s > threshold[i]])
+    low = np.zeros(len(i_sectors))
+    high = np.zeros(len(i_sectors))
+    averages = np.zeros(len(i_sectors))
+    threshold = np.zeros(len(i_sectors))
+    for i, s in enumerate(i_sectors):
+        masked_s = signal[s[0]:s[1]]
+        averages[i] = np.mean(masked_s)
+        low[i] = np.mean(masked_s[masked_s < averages[i]])
+        high[i] = np.mean(masked_s[masked_s > averages[i]])
+        threshold[i] = np.mean(masked_s[masked_s > high[i]])
+        threshold[i] = np.mean(masked_s[masked_s > threshold[i]])
     
     difference = high - low
     if np.any(difference != 0):
@@ -74,16 +85,12 @@ def rescale_tess(times, signal, bjd_ref=2457000.0, diagnostic_plot=False):
     else:
         min_diff = 0
     threshold = 2 * threshold - averages  # to remove spikes (from e.g. momentum dumps)
-    thr_mask = np.ones([len(times)], dtype=bool)
-    # adjust the signal so that it has a more uniform range
-    for i, mask in enumerate(mask_sect):
-        if np.any(mask):
-            signal_copy[mask] = (signal[mask] - averages[i]) / difference[i] * min_diff + averages[i]
-            thr_mask[mask] = (signal[mask] < threshold[i])
-    if diagnostic_plot:
-        return signal_copy, thr_mask, averages, low, high, threshold, mask_sect, jd_sectors
-    else:
-        return signal_copy, thr_mask
+    thr_mask = np.ones(len(times), dtype=np.bool_)
+    # adjust the signal so that it has a more uniform range (and reject (mask) upward outliers)
+    for i, s in enumerate(i_sectors):
+        signal_copy[s[0]:s[1]] = (signal[s[0]:s[1]] - averages[i]) / difference[i] * min_diff + averages[i]
+        thr_mask[s[0]:s[1]] = (signal[s[0]:s[1]] < threshold[i])
+    return signal_copy, thr_mask
 
 
 @nb.njit(cache=True)
@@ -178,7 +185,7 @@ def smooth(a, n, mask=None):
     # reduce = len(a_smooth) - max(len(a), n)
     # left = reduce // 2
     # a_smooth = a_smooth[left:-(reduce - left)]
-    # below method jitted is about as fast, but at least it it then jitted
+    # below method jitted is about as fast as the above unjitted, but at least it is then jitted
     # since the np.convolve is only slowed down by jitting!
     n_2 = n // 2
     n_3 = n % 2
@@ -347,9 +354,8 @@ def find_best_n(times, signal, min_n=2, max_n=50, diagnostic_plot=False):
         best_n = 2
     
     if diagnostic_plot:
-        return best_n, n_range, deviation, optimize, sine_like
-    else:
-        return best_n
+        pt.find_best_n_dplot(n_range, deviation, optimize, sine_like, best_n)
+    return best_n
 
 
 @nb.njit(cache=True)
@@ -669,6 +675,7 @@ def match_in_egress(times, signal, signal_s, added_snr, peaks_edge, peaks_bot, n
                 until_2 = until_1 + 1
             else:
                 until_2 = indices[until_1:][pos_slope[until_1:]][0]
+        
         if (not used[i]) & (pos_slope[i]):
             # these need to be indices indicating the position in the original list of eclipses
             ingress = indices[i:until_1]
@@ -692,9 +699,9 @@ def match_in_egress(times, signal, signal_s, added_snr, peaks_edge, peaks_bot, n
                     d_time = (t_peaks[egress] - t_peaks[ingress])
                     d_time = d_time - np.min(d_time)
                     d_stat = d_add + d_time + d_depth + d_width
-                    full_ecl = np.vstack((full_ecl, np.expand_dims(combs[np.argmin(d_stat)], 0)))
+                    best_match = combs[np.argmin(d_stat)]
+                    full_ecl = np.vstack((full_ecl, np.expand_dims(best_match, 0)))
             used[i:until_2] = True
-
     if (len(full_ecl) == 0):
         not_used = np.ones(len(indices), dtype=np.bool_)
     else:
@@ -714,27 +721,27 @@ def match_in_egress(times, signal, signal_s, added_snr, peaks_edge, peaks_bot, n
         for i, ecl in enumerate(full_ecl):
             pk1 = peaks_edge[ecl[0]]
             pk2 = peaks_edge[ecl[1]]
-            avg_inside[i] = np.mean(signal[pk1 + 1:pk2 - 1])
-            std_inside[i] = np.std(signal[pk1 + 1:pk2 - 1])
+            avg_inside[i] = np.mean(signal[pk1 + 1:pk2])
+            std_inside[i] = np.std(signal[pk1 + 1:pk2])
             if (pk1 > 0) & (pk2 < max_i):
                 pk1_l = max(0, min(pk1 - (pk2 - pk1) // 2, max_i))
-                pk2_r = max(0, min(pk2 + (pk2 - pk1) // 2, max_i))
-                avg_outside[i] = np.mean(signal[pk1_l:pk1]) / 2
-                avg_outside[i] += np.mean(signal[pk2:pk2_r]) / 2
-                std_outside[i] = np.std(signal[pk1_l:pk1]) / 2
-                std_outside[i] += np.std(signal[pk2:pk2_r]) / 2
-                std_s_outside[i] = np.std(signal_s[pk1_l:pk1]) / 2  # also determine std of signal_s
-                std_s_outside[i] += np.std(signal_s[pk2:pk2_r]) / 2
+                pk2_r = max(0, min(pk2 + (pk2 - pk1) // 2, max_i - 1))
+                avg_outside[i] = np.mean(signal[pk1_l:pk1 + 1]) / 2
+                avg_outside[i] += np.mean(signal[pk2:pk2_r + 1]) / 2
+                std_outside[i] = np.std(signal[pk1_l:pk1 + 1]) / 2
+                std_outside[i] += np.std(signal[pk2:pk2_r + 1]) / 2
+                std_s_outside[i] = np.std(signal_s[pk1_l:pk1 + 1]) / 2  # also determine std of signal_s
+                std_s_outside[i] += np.std(signal_s[pk2:pk2_r + 1]) / 2
             elif (pk1 > 0):
                 pk1_l = max(0, min(pk1 - (pk2 - pk1) // 2, max_i))
-                avg_outside[i] = np.mean(signal[pk1_l:pk1])
-                std_outside[i] = np.std(signal[pk1_l:pk1])
-                std_s_outside[i] = np.std(signal_s[pk1_l:pk1])
+                avg_outside[i] = np.mean(signal[pk1_l:pk1 + 1])
+                std_outside[i] = np.std(signal[pk1_l:pk1 + 1])
+                std_s_outside[i] = np.std(signal_s[pk1_l:pk1 + 1])
             elif (pk2 < max_i):
-                pk2_r = max(0, min(pk2 + (pk2 - pk1) // 2, max_i))
-                avg_outside[i] = np.mean(signal[pk2:pk2_r])
-                std_outside[i] = np.std(signal[pk2:pk2_r])
-                std_s_outside[i] = np.std(signal_s[pk2:pk2_r])
+                pk2_r = max(0, min(pk2 + (pk2 - pk1) // 2, max_i - 1))
+                avg_outside[i] = np.mean(signal[pk2:pk2_r + 1])
+                std_outside[i] = np.std(signal[pk2:pk2_r + 1])
+                std_s_outside[i] = np.std(signal_s[pk2:pk2_r + 1])
             std[i] = max(std_inside[i], std_outside[i], std_s_outside[i])
         passed &= (avg_inside < avg_outside - std)
         full_ecl = full_ecl[passed]
@@ -755,7 +762,6 @@ def assemble_eclipses(times, signal, signal_s, peaks, added_snr, slope_sign):
     for the full eclipses) and an array with flags (meaning:
     0=full eclipse, 1=left half and 2=right half)
     """
-    
     if (len(added_snr) == 0):
         # nothing to assemble
         ecl_indices = np.zeros((0, 4), dtype=np.int_)
@@ -825,7 +831,6 @@ def assemble_eclipses(times, signal, signal_s, peaks, added_snr, slope_sign):
             # three groups found, including a 'noise' group
             divider_1 = (edges[i_max_3] + edges[i_max_2]) / 2
             divider_2 = (edges[i_max_2] + edges[i_max_1]) / 2
-    
         # keep track of which category the eclipses belong to
         # split up into a high, middle and low snr group
         group_high = (added_snr >= divider_1)
@@ -870,7 +875,6 @@ def assemble_eclipses(times, signal, signal_s, peaks, added_snr, slope_sign):
                 full_ecl = np.vstack((full_ecl, np.zeros((len(full_ecl_gl), 2), dtype=np.int_)))
                 full_ecl[-len(full_ecl_gl):, 0] = indices[group_low][full_ecl_gl[:, 0]]
                 full_ecl[-len(full_ecl_gl):, 1] = indices[group_low][full_ecl_gl[:, 1]]
-        
         # check overlapping eclipses
         mean_snr = (added_snr[full_ecl[:, 0]] + added_snr[full_ecl[:, 1]]) / 2
         overlap = np.zeros(len(mean_snr), dtype=np.bool_)
@@ -1645,7 +1649,7 @@ def interpret_flags(flags, flags_pst):
     return flags_str, flags_pst_str
 
 
-def find_all(times, signal, mode=1, rescale=True, max_n=80):
+def find_all(times, signal, mode=1, max_n=80, tess_sectors=True):
     """Find the eclipses, ephemeris and the statistics about the eclipses.
     There are several modes of operation:
     1: Only find and return the ephemeris and confidence level
@@ -1660,26 +1664,47 @@ def find_all(times, signal, mode=1, rescale=True, max_n=80):
     dplot = False
     if (mode == -1):
         dplot = True
-    # rescale the different (TESS) sectors
-    if rescale:
-        if dplot:
-            s_copy, thr_mask, avg, low, high, thrh, m_sect, jd_sect = rescale_tess(times, signal, diagnostic_plot=dplot)
-            pt.rescale_tess_dplot(times, signal, s_copy, avg, low, high, thrh, m_sect, jd_sect)
-            signal = s_copy
-        else:
-            signal, thr_mask = rescale_tess(times, signal)
+    if tess_sectors:
+        # get the sector indices
+        i_sectors = get_tess_sectors(times)
+        # rescale the different TESS sectors for more consistent amplitude and better operation
+        signal, thr_mask = rescale_tess(times, signal, i_sectors)
         times = times[thr_mask]
         signal = signal[thr_mask]
-    # find the best number of smoothing points
-    if dplot:
-        n_kernel, n_range, dev, opt, sine_like = find_best_n(times, signal, max_n=max_n, diagnostic_plot=dplot)
-        pt.find_best_n_dplot(n_range, dev, opt, sine_like, n_kernel)
+        # make some empty arrays
+        n_kernel = np.zeros(len(i_sectors), dtype=int)
+        signal_s = np.zeros(len(signal))
+        r_derivs = np.zeros((4, len(signal)))
+        s_derivs = np.zeros((4, len(signal)))
+        peaks = np.zeros((7, 0), dtype=int)
+        added_snr = np.array((), dtype=float)
+        slope_sign = np.array((), dtype=int)
+        sine_like_arr = np.array((), dtype=bool)
+        for i, s in enumerate(i_sectors):
+            # find the best number of smoothing points
+            n_kernel[i] = find_best_n(times[s[0]:s[1]], signal[s[0]:s[1]], max_n=max_n, diagnostic_plot=dplot)
+            # calculate the derivatives
+            signal_s[s[0]:s[1]], r_derivs[:, s[0]:s[1]], s_derivs[:, s[0]:s[1]] = prepare_derivatives(times[s[0]:s[1]],
+                                                                                                      signal[s[0]:s[1]],
+                                                                                                      n_kernel[i])
+            # get the likely eclipse indices from the derivatives
+            peaks_i, added_snr_i, slope_sign_i, sine_like_i = mark_eclipses(times[s[0]:s[1]], signal_s[s[0]:s[1]],
+                                                                            s_derivs[:, s[0]:s[1]],
+                                                                            r_derivs[:, s[0]:s[1]],
+                                                                            n_kernel[i])
+            peaks = np.append(peaks, peaks_i + s[0], axis=1)
+            added_snr = np.append(added_snr, added_snr_i)
+            slope_sign = np.append(slope_sign, slope_sign_i)
+            sine_like_arr = np.append(sine_like_arr, [sine_like_i])
+        sine_like = np.sum(sine_like_arr) > len(i_sectors) / 2  # if more than half are sine like, call it sine like
     else:
-        n_kernel = find_best_n(times, signal, max_n=max_n)
-    # calculate the derivatives
-    signal_s, r_derivs, s_derivs = prepare_derivatives(times, signal, n_kernel)
-    # get the likely eclipse indices from the derivatives and assemble eclipse halves
-    peaks, added_snr, slope_sign, sine_like = mark_eclipses(times, signal_s, s_derivs, r_derivs, n_kernel)
+        # find the best number of smoothing points
+        n_kernel = find_best_n(times, signal, max_n=max_n, diagnostic_plot=dplot)
+        # calculate the derivatives
+        signal_s, r_derivs, s_derivs = prepare_derivatives(times, signal, n_kernel)
+        # get the likely eclipse indices from the derivatives
+        peaks, added_snr, slope_sign, sine_like = mark_eclipses(times, signal_s, s_derivs, r_derivs, n_kernel)
+    # assemble eclipse halves (all at once)
     ecl_indices, added_snr, flags = assemble_eclipses(times, signal, signal_s, peaks, added_snr, slope_sign)
     if dplot:
         pt.plot_marker_diagnostics(times, signal, signal_s, s_derivs, peaks, ecl_indices, flags)

@@ -27,7 +27,7 @@ def get_fits_data(file_name, index=0):
 def ephem_test_from_file(file_name):
     times, signal = np.loadtxt(file_name, unpack=True)
     try:
-        result = ecf.find_all(times, signal, mode=5, rescale=False, max_n=80)
+        result = ecf.find_all(times, signal, mode=5, max_n=80, tess_sectors=False)
     except:
         # an error happened in the following file
         print(file_name)
@@ -37,7 +37,7 @@ def ephem_test_from_file(file_name):
 def ephem_test_from_csv(file_name):
     signal, times = np.loadtxt(file_name, skiprows=1, delimiter=',', unpack=True)
     try:
-        result = ecf.find_all(times, signal, mode=5, rescale=False, max_n=80)
+        result = ecf.find_all(times, signal, mode=5, max_n=80, tess_sectors=True)
     except:
         # an error happened in the following file
         print(file_name)
@@ -64,7 +64,7 @@ def ephem_from_tic(tic, all_files=None):
     else:
         # result = ecf.find_all(times, signal, mode=1, rescale=True, max_n=80, dev_limit=1.8)
         try:
-            result = ecf.find_all(times, signal, mode=1, rescale=True, max_n=80, dev_limit=1.8)
+            result = ecf.find_all(times, signal, mode=1, max_n=80, tess_sectors=True)
         except:
             print(tic)
             result = [-1, -1, -1, -1, -1]

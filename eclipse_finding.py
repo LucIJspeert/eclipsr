@@ -7,12 +7,12 @@ do various miscellaneous things with them (or on arrays in general).
 Code written by: Luc IJspeert
 """
 
-import os
 import numpy as np
 import scipy as sp
 import scipy.signal
 import numba as nb
 
+from . import tess_tools as tt
 from . import plot_tools as pt
 
 
@@ -41,56 +41,6 @@ def mask_eclipses(times, eclipses):
     for ecl in eclipses:
         mask[ecl[0]:ecl[-1] + 1] = False  # include the right point in the mask
     return mask
-
-
-def get_tess_sectors(times, bjd_ref=2457000.0):
-    """Load the times of the TESS sectors from a file and return a set of
-    indices indicating the separate sectors in the time series.
-    """
-    # the 0.5 offset comes from test results, and the fact that no exact JD were found (just calendar days)
-    script_dir = os.path.dirname(os.path.abspath(__file__))  # absolute dir the script is in
-    jd_sectors = np.loadtxt(os.path.join(script_dir, 'tess_sectors.dat'), usecols=(2, 3)) - bjd_ref
-    # use a quick searchsorted to get the positions of the sector transitions
-    i_start = np.searchsorted(times, jd_sectors[:, 0])
-    i_end = np.searchsorted(times, jd_sectors[:, 1])
-    sectors_included = (i_start != i_end)  # this tells which sectors it received data for
-    i_sectors = np.column_stack([i_start[sectors_included], i_end[sectors_included]])
-    return i_sectors
-
-
-@nb.njit(cache=True)
-def rescale_tess(times, signal, i_sectors):
-    """Scales different TESS sectors by a constant to make them match in amplitude.
-    times are in TESS bjd by default, but a different bjd_ref can be given to use
-    a different time reference point.
-    This rescaling will make sure the rest of eclipse finding goes as intended.
-    """
-    signal_copy = np.copy(signal)
-    # determine the range of the signal
-    low = np.zeros(len(i_sectors))
-    high = np.zeros(len(i_sectors))
-    averages = np.zeros(len(i_sectors))
-    threshold = np.zeros(len(i_sectors))
-    for i, s in enumerate(i_sectors):
-        masked_s = signal[s[0]:s[1]]
-        averages[i] = np.mean(masked_s)
-        low[i] = np.mean(masked_s[masked_s < averages[i]])
-        high[i] = np.mean(masked_s[masked_s > averages[i]])
-        threshold[i] = np.mean(masked_s[masked_s > high[i]])
-        threshold[i] = np.mean(masked_s[masked_s > threshold[i]])
-    
-    difference = high - low
-    if np.any(difference != 0):
-        min_diff = np.min(difference[difference != 0])
-    else:
-        min_diff = 0
-    threshold = 2 * threshold - averages  # to remove spikes (from e.g. momentum dumps)
-    thr_mask = np.ones(len(times), dtype=np.bool_)
-    # adjust the signal so that it has a more uniform range (and reject (mask) upward outliers)
-    for i, s in enumerate(i_sectors):
-        signal_copy[s[0]:s[1]] = (signal[s[0]:s[1]] - averages[i]) / difference[i] * min_diff + averages[i]
-        thr_mask[s[0]:s[1]] = (signal[s[0]:s[1]] < threshold[i])
-    return signal_copy, thr_mask
 
 
 @nb.njit(cache=True)
@@ -1554,7 +1504,7 @@ def eclipse_confidence(times, signal_s, deriv_1r, period, ecl_indices, ecl_mid, 
 
 @nb.njit(cache=True)
 def eclipse_confidence_attr(times, signal_s, deriv_1r, period, ecl_indices, ecl_mid, added_snr, widths, depths,
-                       flags, flags_pst):
+                            flags, flags_pst):
     """Determine a number that expresses the confidence that we have found actual eclipses.
     Below 0.42 is probably a false positive, above 0.42 is quite probably and EB.
     """
@@ -1666,9 +1616,10 @@ def find_all(times, signal, mode=1, max_n=80, tess_sectors=True):
         dplot = True
     if tess_sectors:
         # get the sector indices
-        i_sectors = get_tess_sectors(times)
+        i_sectors = tt.get_tess_sectors(times)
+        # convert to median normalised signal
         # rescale the different TESS sectors for more consistent amplitude and better operation
-        signal, thr_mask = rescale_tess(times, signal, i_sectors)
+        signal, thr_mask = tt.rescale_tess(times, signal, i_sectors)
         times = times[thr_mask]
         signal = signal[thr_mask]
         # make some empty arrays
@@ -1682,7 +1633,7 @@ def find_all(times, signal, mode=1, max_n=80, tess_sectors=True):
         sine_like_arr = np.array((), dtype=bool)
         for i, s in enumerate(i_sectors):
             # find the best number of smoothing points
-            n_kernel[i] = find_best_n(times[s[0]:s[1]], signal[s[0]:s[1]], max_n=max_n, diagnostic_plot=dplot)
+            n_kernel[i] = find_best_n(times[s[0]:s[1]], signal[s[0]:s[1]], max_n=max_n, diagnostic_plot=False)
             # calculate the derivatives
             signal_s[s[0]:s[1]], r_derivs[:, s[0]:s[1]], s_derivs[:, s[0]:s[1]] = prepare_derivatives(times[s[0]:s[1]],
                                                                                                       signal[s[0]:s[1]],

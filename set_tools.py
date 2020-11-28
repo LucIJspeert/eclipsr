@@ -27,7 +27,7 @@ def get_fits_data(file_name, index=0):
 def ephem_test_from_file(file_name):
     times, signal = np.loadtxt(file_name, unpack=True)
     try:
-        result = ecf.find_all(times, signal, mode=5, max_n=80, tess_sectors=False)
+        result = ecf.find_all(times, signal + 1, mode=5, max_n=80, tess_sectors=False)
     except:
         # an error happened in the following file
         print(file_name)

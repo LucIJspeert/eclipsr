@@ -72,6 +72,60 @@ def mark_gaps(a):
     return gaps, gap_width
 
 
+def check_constant(signal):
+    """Does a simple check to see if the signal is worth while processing further.
+    The signal must be median normalised.
+    The 10th percentile of the signal centered around zero is compared to the
+    10th percentile of the point-to-point differences.
+    """
+    low = 1 - np.percentile(signal, 10)
+    low_diff = abs(np.percentile(np.diff(signal), 10))
+    return (low < low_diff)
+
+
+def find_best_n(times, signal, min_n=2, max_n=80, diagnostic_plot=False):
+    """Serves to find the best number of points for smoothing the signal
+    in the further analysis (n_kernel).
+    The signal must be median normalised.
+    """
+    if (min_n < 2):
+        print('min_n = 2 is really the minimum.')
+        min_n = 2
+    low = np.percentile(signal, 10)
+    best_n = max(min_n, min(1 / (2 * low), max_n))
+    
+    low = 1 - np.percentile(signal, 10)
+    low_diff = abs(np.percentile(np.diff(signal), 10))
+    if (100*(low - low_diff) <= -0.01):
+        best_n = max_n
+    else:
+        best_n = int(max(min_n, min((2 + 1 / (1 / 40 + 15 * (low - low_diff)), max_n))))
+    return best_n
+
+
+def signal_ingest(times, signal, max_n=80, tess_sectors=True):
+    """Take a signal and process it for ingest into the algorithm.
+    
+    The signal will be median normalised.
+    [Note] signal must not be mean subtracted!
+    
+    If tess_sectors is True, each sector is handled separately and
+    the signal will be rescaled for more consistent eclipse depths across sectors.
+    
+    Outputs the processed signal as well as the best n_kernel to use (per sector).
+    """
+    if tess_sectors:
+        i_sectors = tt.get_tess_sectors(times)
+        signal = tt.norm_counts_tess(signal, i_sectors)
+        n_kernel = np.zeros(len(i_sectors))
+        for i, s in enumerate(i_sectors):
+            n_kernel[i] = find_best_n(times[s[0]:s[1]], signal[s[0]:s[1]], max_n=max_n)
+    else:
+        signal = tt.normalise_counts(signal)
+        n_kernel = find_best_n(times, signal, max_n=max_n)
+        
+
+
 @nb.njit(cache=True)
 def repeat_points_internals(t, n):
     """Makes an array of the number of repetitions to be made in an array before diff
@@ -218,7 +272,7 @@ def prepare_derivatives(times, signal, n_kernel):
     return signal_s, r_derivs, s_derivs
 
 
-def find_best_n(times, signal, min_n=2, max_n=50, diagnostic_plot=False):
+def find_best_n_old(times, signal, min_n=2, max_n=50, diagnostic_plot=False):
     """Serves to find the best number of points for smoothing the signal
     in the further analysis (n_kernel).
     This is a brute force routine, so might be suboptimal to run every time.
@@ -1649,6 +1703,7 @@ def find_all(times, signal, mode=1, max_n=80, tess_sectors=True):
             sine_like_arr = np.append(sine_like_arr, [sine_like_i])
         sine_like = np.sum(sine_like_arr) > len(i_sectors) / 2  # if more than half are sine like, call it sine like
     else:
+        signal = tt.normalise_counts(signal)
         # find the best number of smoothing points
         n_kernel = find_best_n(times, signal, max_n=max_n, diagnostic_plot=dplot)
         # calculate the derivatives

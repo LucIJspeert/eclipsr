@@ -91,15 +91,13 @@ def find_best_n(times, signal, min_n=2, max_n=80, diagnostic_plot=False):
     if (min_n < 2):
         print('min_n = 2 is really the minimum.')
         min_n = 2
-    low = np.percentile(signal, 10)
-    best_n = max(min_n, min(1 / (2 * low), max_n))
-    
+
+    # dependence on sampling rate
+    const = 50 - 1185 * np.median(np.diff(times))
+    # dependence on a measure for the noise relative to the signal
     low = 1 - np.percentile(signal, 10)
     low_diff = abs(np.percentile(np.diff(signal), 10))
-    if (100*(low - low_diff) <= -0.01):
-        best_n = max_n
-    else:
-        best_n = int(max(min_n, min((2 + 1 / (1 / 40 + 15 * (low - low_diff)), max_n))))
+    best_n = int(max(min_n, min(const - 3e3 * (low - low_diff), max_n)))
     return best_n
 
 

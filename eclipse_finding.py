@@ -83,15 +83,11 @@ def check_constant(signal):
     return (low < low_diff)
 
 
-def find_best_n(times, signal, min_n=2, max_n=80, diagnostic_plot=False):
+def find_best_n(times, signal, min_n=1, max_n=80, diagnostic_plot=False):
     """Serves to find the best number of points for smoothing the signal
     in the further analysis (n_kernel).
     The signal must be median normalised.
     """
-    if (min_n < 2):
-        print('min_n = 2 is really the minimum.')
-        min_n = 2
-
     # dependence on sampling rate
     const = 50 - 1185 * np.median(np.diff(times))
     # dependence on a measure for the noise relative to the signal
@@ -248,37 +244,44 @@ def prepare_derivatives(times, signal, n_kernel):
     (signal_s, r_derivs, s_derivs)
     Each curve is first smoothed before taking the derivative.
     [s=smoothed, r=raw]
+    n_kernel = 1 means no smoothing happens.
     """
     diff_t = np.diff(np.append(times, 2 * times[-1] - times[-2]))
-    # get the repetition array and the repetition mask
-    n_repeats, rep_mask = repeat_points_internals(times, n_kernel)
-    # array versions: e=extended, s=smoothed
-    signal_e = np.repeat(signal, n_repeats)
-    deriv_1, signal_s = smooth_derivative(signal_e, diff_t, n_kernel, rep_mask)
-    deriv_1e = np.repeat(deriv_1, n_repeats)
-    deriv_2, deriv_1s = smooth_derivative(deriv_1e, diff_t, n_kernel, rep_mask)
-    deriv_2e = np.repeat(deriv_2, n_repeats)
-    deriv_3, deriv_2s = smooth_derivative(deriv_2e, diff_t, n_kernel, rep_mask)
-    deriv_3e = np.repeat(deriv_3, n_repeats)
-    deriv_3s = smooth(deriv_3e, n_kernel, rep_mask)
-    deriv_13 = - deriv_1s * deriv_3s  # invert the sign to make peaks positive
-    deriv_13e = np.repeat(deriv_13, n_repeats)
-    deriv_13s = smooth(deriv_13e, n_kernel, rep_mask)
+    if (n_kernel == 1):
+        # no smoothing, just derivatives
+        deriv_1 = np.append(signal[1:] - signal[:-1], [signal[-1] - signal[-2]]) / diff_t
+        deriv_2 = np.append(deriv_1[1:] - deriv_1[:-1], [deriv_1[-1] - deriv_1[-2]]) / diff_t
+        deriv_3 = np.append(deriv_2[1:] - deriv_2[:-1], [deriv_2[-1] - deriv_2[-2]]) / diff_t
+        deriv_13 = - deriv_1 * deriv_3
+        signal_s = signal
+        deriv_1s, deriv_2s, deriv_3s, deriv_13s = deriv_1, deriv_2, deriv_3, deriv_13
+    else:
+        # get the repetition array and the repetition mask
+        n_repeats, rep_mask = repeat_points_internals(times, n_kernel)
+        # array versions: e=extended, s=smoothed
+        signal_e = np.repeat(signal, n_repeats)
+        deriv_1, signal_s = smooth_derivative(signal_e, diff_t, n_kernel, rep_mask)
+        deriv_1e = np.repeat(deriv_1, n_repeats)
+        deriv_2, deriv_1s = smooth_derivative(deriv_1e, diff_t, n_kernel, rep_mask)
+        deriv_2e = np.repeat(deriv_2, n_repeats)
+        deriv_3, deriv_2s = smooth_derivative(deriv_2e, diff_t, n_kernel, rep_mask)
+        deriv_3e = np.repeat(deriv_3, n_repeats)
+        deriv_3s = smooth(deriv_3e, n_kernel, rep_mask)
+        deriv_13 = - deriv_1s * deriv_3s  # invert the sign to make peaks positive
+        deriv_13e = np.repeat(deriv_13, n_repeats)
+        deriv_13s = smooth(deriv_13e, n_kernel, rep_mask)
     # return the raw derivs, the smooth derivs and smooth signal
     r_derivs = np.vstack((deriv_1, deriv_2, deriv_3, deriv_13))
     s_derivs = np.vstack((deriv_1s, deriv_2s, deriv_3s, deriv_13s))
     return signal_s, r_derivs, s_derivs
 
 
-def find_best_n_old(times, signal, min_n=2, max_n=50, diagnostic_plot=False):
+def find_best_n_old(times, signal, min_n=1, max_n=50, diagnostic_plot=False):
     """Serves to find the best number of points for smoothing the signal
     in the further analysis (n_kernel).
     This is a brute force routine, so might be suboptimal to run every time.
     """
     # todo: need better function... but this one seems to work okay
-    if (min_n < 2):
-        print('min_n = 2 is really the minimum.')
-        min_n = 2
     n_range = np.arange(min_n, max_n + max_n % 2)
     deviation = np.zeros([len(n_range)])
     sine_like = np.zeros([len(n_range)], dtype=bool)
@@ -479,10 +482,11 @@ def mark_eclipses(times, signal_s, s_derivs, r_derivs, n_kernel):
     deriv_1r, deriv_2r, deriv_3r, deriv_13r = r_derivs
     dt = np.diff(np.append(times, 2 * times[-1] - times[-2]))
     # find the peaks from combined deriv 1*3
-    peaks_13, props = sp.signal.find_peaks(deriv_13s, height=np.max(deriv_13s) / 16 / n_kernel)
+    peaks_13, props = sp.signal.find_peaks(deriv_13s, height=10 * np.median(deriv_13s))
     pk_13_widths, wh, ipsl, ipsr = sp.signal.peak_widths(deriv_13s, peaks_13, rel_height=0.5)
     pk_13_widths = np.ceil(pk_13_widths / 2).astype(int)
     # check whether multiple peaks_13 were found on a single deriv_1 peak
+    # print(deriv_1s, deriv_13s, peaks_13)
     passed_0 = eliminate_same_peak(deriv_1s, deriv_13s, peaks_13)
     peaks_13 = peaks_13[passed_0]
     pk_13_widths = pk_13_widths[passed_0]
@@ -491,6 +495,7 @@ def mark_eclipses(times, signal_s, s_derivs, r_derivs, n_kernel):
     n_peaks = len(peaks_13)
     slope_sign = np.sign(deriv_3s[peaks_13]).astype(int)  # sign of the slope in deriv_2s
     neg_slope = (slope_sign == -1)
+    pos_slope = np.invert(neg_slope)
     # peaks in 1 and 3 are not exactly in the same spot: find the right spot here
     indices = np.arange(n_peaks)
     med_width = np.median(pk_13_widths).astype(int)
@@ -532,6 +537,16 @@ def mark_eclipses(times, signal_s, s_derivs, r_derivs, n_kernel):
         # only correct the converging ones
         peaks_2_nn = curve_walker(deriv_2s, peaks_2_pos, slope_sign, no_gaps, mode='down_to_zero', look_ahead=1)
         peaks_2_neg[check_converge] = peaks_2_nn[check_converge]
+        
+    # if peaks_3 have an equal and opposite counterpart on the outside next to them, might be spike
+    peaks_3_out = np.copy(peaks_1)
+    peaks_3_out[pos_slope] = curve_walker(deriv_3s, peaks_3[pos_slope], slope_sign[pos_slope],
+                                          no_gaps, mode='down', look_ahead=1)
+    peaks_3_out[neg_slope] = curve_walker(deriv_3s, peaks_3[neg_slope], -slope_sign[neg_slope],
+                                          no_gaps, mode='up', look_ahead=1)
+    pk3_diff = np.abs(deriv_3s[peaks_3] + deriv_3s[peaks_3_out])
+    pk3_sum = np.abs(deriv_3s[peaks_3] - deriv_3s[peaks_3_out])
+    passed_spikes = (pk3_diff > pk3_sum / 20)
     
     # in/egress peaks (eclipse edges) and bottoms are adjusted a bit
     peaks_edge = np.clip(peaks_2_neg - slope_sign + (n_kernel % 2) - (n_kernel == 2) * neg_slope, 0, max_i)
@@ -539,6 +554,7 @@ def mark_eclipses(times, signal_s, s_derivs, r_derivs, n_kernel):
     # first check for some simple strong conditions on the eclipses (signal inside must be lower)
     passed_1 = np.ones([n_peaks], dtype=bool)
     passed_1 &= (signal_s[peaks_edge] > signal_s[peaks_bot])
+    passed_1 &= passed_spikes
     # the peak in 13 should not be right next to a much higher peak (could be sidelobe)
     left = np.clip(peaks_13 - 2, 0, max_i)
     right = np.clip(peaks_13 + 2, 0, max_i)
@@ -651,7 +667,7 @@ def local_extremum(a, start, right=True, maximum=True):
 
 
 @nb.njit(cache=True)
-def match_in_egress(times, signal, signal_s, added_snr, peaks_edge, peaks_bot, neg_slope, pos_slope):
+def match_in_egress(times, signal_s, added_snr, peaks_edge, peaks_bot, neg_slope, pos_slope):
     """Match up the best combinations of ingress and egress to form full eclipses.
     This is done by chopping all peaks up into parts with consecutive sets of
     ingresses and egresses (through slope sign), and then matching the most alike ones.
@@ -713,39 +729,35 @@ def match_in_egress(times, signal, signal_s, added_snr, peaks_edge, peaks_bot, n
         med_width = np.median(full_widths[avg_added >= np.mean(avg_added)])
         # and compare the other full_ecl against it.
         passed = (full_widths > 0.1 * med_width) & (full_widths < 2.5 * med_width)
-        # check the average in-eclipse level compared to surrounding
+        # check the average in-eclipse level compared to surrounding (for raw and smooth signal)
         avg_inside = np.zeros(len(full_ecl))
         avg_outside = np.zeros(len(full_ecl))
         std_inside = np.zeros(len(full_ecl))
         std_outside = np.zeros(len(full_ecl))
-        std_s_outside = np.zeros(len(full_ecl))
         std = np.zeros(len(full_ecl))
+        std_s = np.zeros(len(full_ecl))
         for i, ecl in enumerate(full_ecl):
             pk1 = peaks_edge[ecl[0]]
             pk2 = peaks_edge[ecl[1]]
-            avg_inside[i] = np.mean(signal[pk1 + 1:pk2])
-            std_inside[i] = np.std(signal[pk1 + 1:pk2])
+            avg_inside[i] = np.mean(signal_s[pk1 + 1:pk2])
+            std_inside[i] = np.std(signal_s[pk1 + 1:pk2])
             if (pk1 > 0) & (pk2 < max_i):
                 pk1_l = max(0, min(pk1 - (pk2 - pk1) // 2, max_i))
                 pk2_r = max(0, min(pk2 + (pk2 - pk1) // 2, max_i - 1))
-                avg_outside[i] = np.mean(signal[pk1_l:pk1 + 1]) / 2
-                avg_outside[i] += np.mean(signal[pk2:pk2_r + 1]) / 2
-                std_outside[i] = np.std(signal[pk1_l:pk1 + 1]) / 2
-                std_outside[i] += np.std(signal[pk2:pk2_r + 1]) / 2
-                std_s_outside[i] = np.std(signal_s[pk1_l:pk1 + 1]) / 2  # also determine std of signal_s
-                std_s_outside[i] += np.std(signal_s[pk2:pk2_r + 1]) / 2
+                avg_outside[i] = np.mean(signal_s[pk1_l:pk1 + 1]) / 2
+                avg_outside[i] += np.mean(signal_s[pk2:pk2_r + 1]) / 2
+                std_outside[i] = np.std(signal_s[pk1_l:pk1 + 1]) / 2
+                std_outside[i] += np.std(signal_s[pk2:pk2_r + 1]) / 2
             elif (pk1 > 0):
                 pk1_l = max(0, min(pk1 - (pk2 - pk1) // 2, max_i))
-                avg_outside[i] = np.mean(signal[pk1_l:pk1 + 1])
-                std_outside[i] = np.std(signal[pk1_l:pk1 + 1])
-                std_s_outside[i] = np.std(signal_s[pk1_l:pk1 + 1])
+                avg_outside[i] = np.mean(signal_s[pk1_l:pk1 + 1])
+                std_outside[i] = np.std(signal_s[pk1_l:pk1 + 1])
             elif (pk2 < max_i):
                 pk2_r = max(0, min(pk2 + (pk2 - pk1) // 2, max_i - 1))
-                avg_outside[i] = np.mean(signal[pk2:pk2_r + 1])
-                std_outside[i] = np.std(signal[pk2:pk2_r + 1])
-                std_s_outside[i] = np.std(signal_s[pk2:pk2_r + 1])
-            std[i] = max(std_inside[i], std_outside[i], std_s_outside[i])
-        passed &= (avg_inside < avg_outside - std)
+                avg_outside[i] = np.mean(signal_s[pk2:pk2_r + 1])
+                std_outside[i] = np.std(signal_s[pk2:pk2_r + 1])
+            std[i] = max(std_inside[i], std_outside[i])
+        passed &= (avg_outside - avg_inside > std_s)
         full_ecl = full_ecl[passed]
         # also make an array of bool for which peaks where used
         not_used = np.ones(len(indices), dtype=np.bool_)
@@ -843,7 +855,7 @@ def assemble_eclipses(times, signal, signal_s, peaks, added_snr, slope_sign):
                 group_high = group_high | group_mid
         group_low = (added_snr < divider_2)
         # match peaks form the highest group
-        full_ecl_gh, unused_gh = match_in_egress(times, signal, signal_s, added_snr[group_high],
+        full_ecl_gh, unused_gh = match_in_egress(times, signal_s, added_snr[group_high],
                                                  peaks_edge[group_high], peaks_bot[group_high],
                                                  neg_slope[group_high], pos_slope[group_high])
         if (len(full_ecl_gh) > 0):
@@ -856,7 +868,7 @@ def assemble_eclipses(times, signal, signal_s, peaks, added_snr, slope_sign):
         # match peaks form the middle group
         if np.any(group_mid):
             group_mid[group_high] = group_mid[group_high] | unused_gh  # put any non-used peaks in the next group
-            full_ecl_gm, unused_gm = match_in_egress(times, signal, signal_s, added_snr[group_mid],
+            full_ecl_gm, unused_gm = match_in_egress(times, signal_s, added_snr[group_mid],
                                                      peaks_edge[group_mid], peaks_bot[group_mid],
                                                      neg_slope[group_mid], pos_slope[group_mid])
             if (len(full_ecl_gm) > 0):
@@ -869,7 +881,7 @@ def assemble_eclipses(times, signal, signal_s, peaks, added_snr, slope_sign):
             group_low[group_high] = group_low[group_high] | unused_gh  # put any non-used peaks in the next group
         # match peaks form the lowest group
         if np.any(group_low):
-            full_ecl_gl, unused_gl = match_in_egress(times, signal, signal_s, added_snr[group_low],
+            full_ecl_gl, unused_gl = match_in_egress(times, signal_s, added_snr[group_low],
                                                      peaks_edge[group_low], peaks_bot[group_low],
                                                      neg_slope[group_low], pos_slope[group_low])
             if (len(full_ecl_gl) > 0):

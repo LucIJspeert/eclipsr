@@ -301,7 +301,7 @@ def find_best_n_old(times, signal, min_n=1, max_n=50, diagnostic_plot=False):
     for i, n in enumerate(n_range):
         signal_s, r_derivs, s_derivs = prepare_derivatives(times, norm_signal, n)
         deviation[i] = np.mean((norm_signal - signal_s)**2)
-        peaks, added_snr, slope_sign, sine_like[i] = mark_eclipses(times, signal_s, s_derivs, r_derivs, n)
+        peaks, added_snr, slope_sign, sine_like[i] = mark_eclipses(times, signal, signal_s, s_derivs, r_derivs, n)
         ecl_indices, added_snr, flags = assemble_eclipses(times, norm_signal, signal_s, peaks, added_snr, slope_sign)
         if (len(flags) > 0):
             m_full = (flags == 0)  # mask of the full eclipses
@@ -472,7 +472,37 @@ def eliminate_same_peak(deriv_1s, deriv_13s, peaks_13):
     return passed
 
 
-def mark_eclipses(times, signal_s, s_derivs, r_derivs, n_kernel):
+@nb.njit(cache=True)
+def check_depth_slope(signal, signal_s, s_derivs, peaks_2_neg, peaks_2_pos):
+    """Compare the depth of each in/egress to the scatter (in the raw light curve)
+    as well as the slope changes in the curve.
+    """
+    n_peaks = len(peaks_2_neg)
+    max_i = len(signal) - 1
+    deriv_1s, deriv_2s, deriv_3s, deriv_13s = s_derivs
+    scat = np.mean(np.abs(signal[1:] - signal[:-1]))
+    slope_threshold = 0.01
+    depth = np.zeros(n_peaks)
+    slope = np.zeros(n_peaks)
+    slope_left = np.zeros(n_peaks)
+    slope_right = np.zeros(n_peaks)
+    for i in range(n_peaks):
+        # select the left and the right side of the peak position
+        pk1 = min(peaks_2_neg[i], peaks_2_pos[i])
+        pk2 = max(peaks_2_neg[i], peaks_2_pos[i])
+        pk1_l = max(0, min(2 * pk1 - pk2 - 1, pk1 - 1))
+        pk2_r = max(pk2 + 2, min(2 * pk2 - pk1 + 1, max_i - 1))
+        # depth must be larger than peak-to-peak scatter
+        depth[i] = signal_s[peaks_2_neg[i]] - signal_s[peaks_2_pos[i]]
+        slope_left[i] = np.mean(deriv_1s[pk1_l:pk1])
+        slope_right[i] = np.mean(deriv_1s[pk2 + 1:pk2_r])
+        slope[i] = np.mean(deriv_1s[pk1:pk2])
+    passed = (np.abs(slope - slope_left) > slope_threshold) & (np.abs(slope - slope_right) > slope_threshold)
+    passed = passed & (depth > 4 * scat)
+    return passed
+
+
+def mark_eclipses(times, signal, signal_s, s_derivs, r_derivs, n_kernel):
     """Mark the positions of eclipse in/egress
     See: 'prepare_derivatives' to get the input for this function.
     Returns all peak position arrays in a vertically stacked group,
@@ -486,10 +516,10 @@ def mark_eclipses(times, signal_s, s_derivs, r_derivs, n_kernel):
     pk_13_widths, wh, ipsl, ipsr = sp.signal.peak_widths(deriv_13s, peaks_13, rel_height=0.5)
     pk_13_widths = np.ceil(pk_13_widths / 2).astype(int)
     # check whether multiple peaks_13 were found on a single deriv_1 peak
-    # print(deriv_1s, deriv_13s, peaks_13)
-    passed_0 = eliminate_same_peak(deriv_1s, deriv_13s, peaks_13)
-    peaks_13 = peaks_13[passed_0]
-    pk_13_widths = pk_13_widths[passed_0]
+    if (len(peaks_13) > 1):
+        passed_0 = eliminate_same_peak(deriv_1s, deriv_13s, peaks_13)
+        peaks_13 = peaks_13[passed_0]
+        pk_13_widths = pk_13_widths[passed_0]
     # some useful parameters
     max_i = len(deriv_2s) - 1
     n_peaks = len(peaks_13)
@@ -498,14 +528,18 @@ def mark_eclipses(times, signal_s, s_derivs, r_derivs, n_kernel):
     pos_slope = np.invert(neg_slope)
     # peaks in 1 and 3 are not exactly in the same spot: find the right spot here
     indices = np.arange(n_peaks)
-    med_width = np.median(pk_13_widths).astype(int)
-    n_repeats = 2 * med_width + 1
-    peaks_range = np.repeat(peaks_13, n_repeats).reshape(n_peaks, n_repeats) + np.arange(-med_width, med_width + 1)
-    peaks_range = np.clip(peaks_range, 0, max_i)
-    peaks_1 = np.argmax(-slope_sign.reshape(n_peaks, 1) * deriv_1s[peaks_range], axis=1)
-    peaks_1 = peaks_range[indices, peaks_1]
-    peaks_3 = np.argmax(slope_sign.reshape(n_peaks, 1) * deriv_3s[peaks_range], axis=1)
-    peaks_3 = peaks_range[indices, peaks_3]
+    if (len(peaks_13) > 0):
+        med_width = np.median(pk_13_widths).astype(int)
+        n_repeats = 2 * med_width + 1
+        peaks_range = np.repeat(peaks_13, n_repeats).reshape(n_peaks, n_repeats) + np.arange(-med_width, med_width + 1)
+        peaks_range = np.clip(peaks_range, 0, max_i)
+        peaks_1 = np.argmax(-slope_sign.reshape(n_peaks, 1) * deriv_1s[peaks_range], axis=1)
+        peaks_1 = peaks_range[indices, peaks_1]
+        peaks_3 = np.argmax(slope_sign.reshape(n_peaks, 1) * deriv_3s[peaks_range], axis=1)
+        peaks_3 = peaks_range[indices, peaks_3]
+    else:
+        peaks_1 = np.copy(peaks_13)
+        peaks_3 = np.copy(peaks_13)
     # need a mask with True everywhere but at the gap positions
     gaps, gap_widths = mark_gaps(times)
     no_gaps = np.invert(gaps)
@@ -552,8 +586,8 @@ def mark_eclipses(times, signal_s, s_derivs, r_derivs, n_kernel):
     peaks_edge = np.clip(peaks_2_neg - slope_sign + (n_kernel % 2) - (n_kernel == 2) * neg_slope, 0, max_i)
     peaks_bot = np.clip(peaks_2_pos + (n_kernel % 2), 0, max_i)
     # first check for some simple strong conditions on the eclipses (signal inside must be lower)
-    passed_1 = np.ones([n_peaks], dtype=bool)
-    passed_1 &= (signal_s[peaks_edge] > signal_s[peaks_bot])
+    passed_1 = (signal_s[peaks_edge] > signal_s[peaks_bot])
+    passed_1 &= (np.abs(peaks_2_neg - peaks_2_pos) > 1)
     passed_1 &= passed_spikes
     # the peak in 13 should not be right next to a much higher peak (could be sidelobe)
     left = np.clip(peaks_13 - 2, 0, max_i)
@@ -625,6 +659,10 @@ def mark_eclipses(times, signal_s, s_derivs, r_derivs, n_kernel):
         # do a final check on the total 'eclipse strength'
         added_snr = (snr_0 + snr_1 + snr_2 + snr_3)
         passed_2 &= (added_snr > 10)
+        
+        # compare to the scatter in the raw signal
+        passed_2 &= check_depth_slope(signal, signal_s, s_derivs, peaks_2_neg, peaks_2_pos)
+        
         # select the ones that passed
         peaks_1 = peaks_1[passed_2]
         peaks_2_neg = peaks_2_neg[passed_2]
@@ -676,6 +714,7 @@ def match_in_egress(times, signal_s, added_snr, peaks_edge, peaks_bot, neg_slope
     max_i = len(times) - 1
     indices = np.arange(len(added_snr))
     t_peaks = times[peaks_edge]
+    t_step = np.median(times[1:] - times[:-1])
     # depths and widths of the in/egress points
     depths_single = signal_s[peaks_edge] - signal_s[peaks_bot]
     widths_single = np.abs(times[peaks_bot] - times[peaks_edge])
@@ -723,24 +762,22 @@ def match_in_egress(times, signal_s, added_snr, peaks_edge, peaks_bot, neg_slope
     if (len(full_ecl) == 0):
         not_used = np.ones(len(indices), dtype=np.bool_)
     else:
-        # take the average width of the full_ecl
-        avg_added = (added_snr[full_ecl[:, 0]] + added_snr[full_ecl[:, 1]]) / 2
         full_widths = (times[peaks_edge[full_ecl[:, 1]]] - times[peaks_edge[full_ecl[:, 0]]])
-        med_width = np.median(full_widths[avg_added >= np.mean(avg_added)])
-        # and compare the other full_ecl against it.
-        passed = (full_widths > 0.1 * med_width) & (full_widths < 2.5 * med_width)
-        # check the average in-eclipse level compared to surrounding (for raw and smooth signal)
+        # check the average in-eclipse level compared to surrounding (in the smooth signal)
         avg_inside = np.zeros(len(full_ecl))
         avg_outside = np.zeros(len(full_ecl))
         std_inside = np.zeros(len(full_ecl))
         std_outside = np.zeros(len(full_ecl))
         std = np.zeros(len(full_ecl))
-        std_s = np.zeros(len(full_ecl))
+        gap_ratio = np.zeros(len(full_ecl))
+        snr_diff = np.zeros(len(full_ecl))
         for i, ecl in enumerate(full_ecl):
             pk1 = peaks_edge[ecl[0]]
             pk2 = peaks_edge[ecl[1]]
-            avg_inside[i] = np.mean(signal_s[pk1 + 1:pk2])
-            std_inside[i] = np.std(signal_s[pk1 + 1:pk2])
+            pk1b = peaks_bot[ecl[0]]
+            pk2b = peaks_bot[ecl[1]]
+            avg_inside[i] = np.mean(signal_s[pk1b:pk2b + 1])
+            std_inside[i] = np.std(signal_s[pk1b:pk2b + 1])
             if (pk1 > 0) & (pk2 < max_i):
                 pk1_l = max(0, min(pk1 - (pk2 - pk1) // 2, max_i))
                 pk2_r = max(0, min(pk2 + (pk2 - pk1) // 2, max_i - 1))
@@ -756,8 +793,13 @@ def match_in_egress(times, signal_s, added_snr, peaks_edge, peaks_bot, neg_slope
                 pk2_r = max(0, min(pk2 + (pk2 - pk1) // 2, max_i - 1))
                 avg_outside[i] = np.mean(signal_s[pk2:pk2_r + 1])
                 std_outside[i] = np.std(signal_s[pk2:pk2_r + 1])
-            std[i] = max(std_inside[i], std_outside[i])
-        passed &= (avg_outside - avg_inside > std_s)
+            std[i] = min(std_inside[i], std_outside[i])
+            gap_ratio[i] = (pk2 - pk1) / (full_widths[i] / t_step)
+            snr_diff[i] = max(added_snr[ecl[0]], added_snr[ecl[1]])
+            snr_diff[i] = snr_diff[i] / min(added_snr[ecl[0]], added_snr[ecl[1]])
+        passed = (avg_outside - avg_inside > std)
+        passed &= (gap_ratio > 0.5)  # check for large gaps in the eclipses
+        passed &= (snr_diff < 1.8)  # check for major difference in added_snr
         full_ecl = full_ecl[passed]
         # also make an array of bool for which peaks where used
         not_used = np.ones(len(indices), dtype=np.bool_)
@@ -944,7 +986,7 @@ def find_eclipses(times, signal, n_kernel, diagnostic_plot=False):
     # do the derivatives
     signal_s, r_derivs, s_derivs = prepare_derivatives(times, signal, n_kernel)
     # find the likely eclipse in/egresses and put them together
-    peaks, added_snr, slope_sign, sine_like = mark_eclipses(times, signal_s, s_derivs, r_derivs, n_kernel)
+    peaks, added_snr, slope_sign, sine_like = mark_eclipses(times, signal, signal_s, s_derivs, r_derivs, n_kernel)
     ecl_indices, added_snr, flags = assemble_eclipses(times, signal, signal_s, peaks, added_snr, slope_sign)
     
     if diagnostic_plot:
@@ -1355,7 +1397,7 @@ def find_ephemeris(times, signal, n_kernel, diagnostic_plot=False):
     # do the derivatives
     signal_s, r_derivs, s_derivs = prepare_derivatives(times, signal, n_kernel)
     # find the likely eclipse in/egresses and put them together
-    peaks, added_snr, slope_sign, sine_like = mark_eclipses(times, signal_s, s_derivs, r_derivs, n_kernel)
+    peaks, added_snr, slope_sign, sine_like = mark_eclipses(times, signal, signal_s, s_derivs, r_derivs, n_kernel)
     ecl_indices, added_snr, flags = assemble_eclipses(times, signal, signal_s, peaks, added_snr, slope_sign)
     # take some measurements
     ecl_mid, widths, depths, ratios = measure_eclipses(times, signal_s, ecl_indices, flags)
@@ -1703,7 +1745,8 @@ def find_all(times, signal, mode=1, max_n=80, tess_sectors=True):
                                                                                                       signal[s[0]:s[1]],
                                                                                                       n_kernel[i])
             # get the likely eclipse indices from the derivatives
-            peaks_i, added_snr_i, slope_sign_i, sine_like_i = mark_eclipses(times[s[0]:s[1]], signal_s[s[0]:s[1]],
+            peaks_i, added_snr_i, slope_sign_i, sine_like_i = mark_eclipses(times[s[0]:s[1]], signal[s[0]:s[1]],
+                                                                            signal_s[s[0]:s[1]],
                                                                             s_derivs[:, s[0]:s[1]],
                                                                             r_derivs[:, s[0]:s[1]],
                                                                             n_kernel[i])
@@ -1719,7 +1762,7 @@ def find_all(times, signal, mode=1, max_n=80, tess_sectors=True):
         # calculate the derivatives
         signal_s, r_derivs, s_derivs = prepare_derivatives(times, signal, n_kernel)
         # get the likely eclipse indices from the derivatives
-        peaks, added_snr, slope_sign, sine_like = mark_eclipses(times, signal_s, s_derivs, r_derivs, n_kernel)
+        peaks, added_snr, slope_sign, sine_like = mark_eclipses(times, signal, signal_s, s_derivs, r_derivs, n_kernel)
     # assemble eclipse halves (all at once)
     ecl_indices, added_snr, flags = assemble_eclipses(times, signal, signal_s, peaks, added_snr, slope_sign)
     if dplot:

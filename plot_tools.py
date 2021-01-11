@@ -10,6 +10,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 
 from . import eclipse_finding as ecf
+from . import utility as ut
 
 
 def rescale_tess_dplot(times, signal, signal_copy, averages, low, high, threshold, mask_sect, jd_sectors):
@@ -50,7 +51,7 @@ def find_best_n_dplot(n_range, deviation, optimize, sine_like, best_n):
     return
 
 
-def plot_marker_diagnostics(times, signal, signal_s, s_derivs, peaks, ecl_indices, flags):
+def plot_marker_diagnostics(times, signal, signal_s, s_derivs, peaks, ecl_indices, flags, n_kernel):
     """Plot the signal and derivatives with the eclipse points marked."""
     deriv_1s, deriv_2s, deriv_3s, deriv_13s = s_derivs
     peaks_1, peaks_2_neg, peaks_2_pos, peaks_edge, peaks_bot, peaks_3, peaks_13 = peaks
@@ -58,7 +59,7 @@ def plot_marker_diagnostics(times, signal, signal_s, s_derivs, peaks, ecl_indice
     
     fig, ax = plt.subplots(nrows=5, ncols=1, sharex=True, figsize=[14, 10])
     ax[0].plot(times, signal, label='raw')
-    ax[0].plot(times, signal_s, label='smoothed')
+    ax[0].plot(times, signal_s, label=f'smoothed n={n_kernel}')
     ax[0].scatter(times[peaks_1], signal[peaks_1], label='peak marker', c='tab:orange')
     ax[0].scatter(times[peaks_edge], signal[peaks_edge], label='outside', c='tab:red')
     ax[0].scatter(times[peaks_bot], signal[peaks_bot], label='inside', c='tab:green')
@@ -114,7 +115,7 @@ def plot_period_diagnostics(times, signal, signal_s, ecl_indices, ecl_mid, width
         t_0 = ecl_mid[prim][0]
         period_array = np.arange(t_0, times[0], -period)[::-1]
         period_array = np.append(period_array, np.arange(t_0, times[-1], period))
-        phases = ecf.fold_time_series(ecl_mid, period, (t_0 + period / 4))
+        phases = ut.fold_time_series(ecl_mid, period, (t_0 + period / 4))
     else:
         phases = np.zeros([len(ecl_mid)])
     s_minmax = (np.max(signal) - np.min(signal))

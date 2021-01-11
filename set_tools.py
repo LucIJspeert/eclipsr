@@ -6,7 +6,9 @@ using parallelisation.
 Code written by: Luc IJspeert
 """
 
+import os
 import numpy as np
+import multiprocessing as mp
 import astropy.io.fits as fits
 
 from . import eclipse_finding as ecf
@@ -26,21 +28,22 @@ def get_fits_data(file_name, index=0):
 
 def ephem_test_from_file(file_name):
     times, signal = np.loadtxt(file_name, unpack=True)
+    
     try:
-        result = ecf.find_all(times, signal + 1, mode=5, max_n=80, tess_sectors=False)
+        result = ecf.find_eclipses(times, signal + 1, mode=5, max_n=80, tess_sectors=False)
     except:
-        # an error happened in the following file
-        print(file_name)
+        print(f'an error happened in the following file: {file_name}')
+        result = []
     return result
 
 
 def ephem_test_from_csv(file_name):
     signal, times = np.loadtxt(file_name, skiprows=1, delimiter=',', unpack=True)
     try:
-        result = ecf.find_all(times, signal, mode=5, max_n=80, tess_sectors=True)
+        result = ecf.find_eclipses(times, signal, mode=5, max_n=80, tess_sectors=True)
     except:
-        # an error happened in the following file
-        print(file_name)
+        print(f'an error happened in the following file: {file_name}')
+        result = []
     return result
 
 
@@ -64,9 +67,9 @@ def ephem_from_tic(tic, all_files=None):
     else:
         # result = ecf.find_all(times, signal, mode=1, rescale=True, max_n=80, dev_limit=1.8)
         try:
-            result = ecf.find_all(times, signal, mode=1, max_n=80, tess_sectors=True)
+            result = ecf.find_eclipses(times, signal, mode=1, max_n=80, tess_sectors=True)
         except:
-            print(tic)
+            print(f'an error happened in the following tic: {tic}')
             result = [-1, -1, -1, -1, -1]
     return result[:3]
 
@@ -80,3 +83,12 @@ def conf_from_set(file_name, results_full):
     confidence = ecf.eclipse_confidence(times, signal_s, r_derivs[0], period, ecl_indices, ecl_mid, added_snr, widths, depths,
                               flags, flags_pst, return_all=True)
     return confidence
+
+
+def analyse_set(target_list, function='ephem_test_from_file', n_threads='default'):
+    """Give a set of file names or target identifiers depending on the function used.
+     The eclipsr program will be run in parallel on the set.
+     """
+    with mp.get_context('spawn').Pool(processes=os.cpu_count() - 2) as pool:
+        results = pool.map(eval(function), target_list)
+    return results

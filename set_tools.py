@@ -3,6 +3,9 @@
 This module contains functions to analyse (large) sets of light curves
 using parallelisation.
 
+[note] this module is a work in progress, it is recommended to understand and
+modify this code to fit your needs before using it.
+
 Code written by: Luc IJspeert
 """
 

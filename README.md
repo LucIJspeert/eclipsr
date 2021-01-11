@@ -24,19 +24,19 @@ Using older versions could result in unexpected errors, although any Python vers
 
 Since the main feature of ECLIPSR is its fully automated operation, taking advantage of its functionality is as simple as running one or two functions:
 
->>> import eclipsr as ecl
->>> # it is recommended to run this before using other functions (see its function description)
->>> times, signal = ecl.utility.ingest_signal(times, signal, tess_sectors=True)
->>> # find_eclipses() combines all of the functionality into one function
->>> t_0, period, conf, sine_like, n_kernel = ecl.find_eclipses(times, signal, mode=1, tess_sectors=True)
+	>>> import eclipsr as ecl
+	>>> # it is recommended to run this before using other functions (see its function description)
+	>>> times, signal = ecl.utility.ingest_signal(times, signal, tess_sectors=True)
+	>>> # find_eclipses() combines all of the functionality into one function
+	>>> t_0, period, conf, sine_like, n_kernel = ecl.find_eclipses(times, signal, mode=1, tess_sectors=True)
 
 The tess_sectors argument is a TESS space satellite-specific function, to be used if multiple sectors of TESS data are ingested at once. 
 The signal ingest function converts the usual TESS data (electron counts) into a median normalised time series where nan-values are removed. If your input time series is not in counts, please make sure it is median normalised (non-negative) and only contains finite values before using the find\_eclipses() function.
 
 To get more output than just the five listed in the above example, use different mode numbers. Mode 4 will give every last bit of possibly useful information that was determined from the analysis.
 
->>> result = ecl.find_eclipses(times, signal, mode=4, tess_sectors=True)
->>> t_0, period, conf, sine_like, n_kernel, width_stats, depth_stats, ecl_mid, widths, depths, ratios, flags, flags_pst, ecl_indices, added_snr = result
+	>>> result = ecl.find_eclipses(times, signal, mode=4, tess_sectors=True)
+	>>> t_0, period, conf, sine_like, n_kernel, width_stats, depth_stats, ecl_mid, widths, depths, ratios, flags, flags_pst, ecl_indices, added_snr = result
 
 ### Explanation of output
 

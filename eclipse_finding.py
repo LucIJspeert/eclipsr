@@ -284,6 +284,7 @@ def find_best_n(times, signal, min_n=1, max_n=80):
                 slope_right = height_right / width_right
                 slope_left = height_left / width_left
                 slope = (slope_right + slope_left) / 2
+                # todo: add slope length to slope measure for faster data rates
             slope_measure[i] = np.percentile(slope, 90)
             # check for eclipses with few datapoints
             if (np.median(ecl_indices[:, -1] - ecl_indices[:, 0]) < 10):

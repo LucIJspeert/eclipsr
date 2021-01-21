@@ -95,6 +95,6 @@ def analyse_set(target_list, function='ephem_test_from_file', n_threads=os.cpu_c
     with mp.get_context('spawn').Pool(processes=n_threads) as pool:
         results = pool.map(fct.partial(eval(function), **kwargs), target_list)
     t2 = time.time()
-    print(f'Finished analysing set in: {t2 - t1:1.1} s ({(t2 - t1) / 3600:1.2} h) for {len(target_list)} targets,')
+    print(f'Finished analysing set in: {(t2 - t1):1.2} s ({(t2 - t1) / 3600:1.2} h) for {len(target_list)} targets,')
     print(f'using {n_threads} threads ({len(target_list) / (t2 - t1) * n_threads} average per target single thread).')
     return results

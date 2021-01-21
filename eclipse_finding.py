@@ -291,6 +291,7 @@ def find_best_n(times, signal, min_n=1, max_n=80):
                 # length = (length_right + length_left) / 2
                 # todo: add slope length to slope measure for faster data rates
             slope_norm = np.percentile(np.abs(r_derivs[0]), 10)
+            # todo: look at improving this
             slope_measure[i] = np.percentile(slope, 90) / slope_norm
             # check for eclipses with few datapoints
             if (np.median(ecl_indices[:, -1] - ecl_indices[:, 0]) < 10):
@@ -304,6 +305,10 @@ def find_best_n(times, signal, min_n=1, max_n=80):
                 if (len(ecl_indices[single]) > max(10, 0.1 * len(ecl_indices))) & (n == 1):
                     slope_measure[i] *= 0.5
             snr_measure[i] = np.max(added_snr)
+            if (len(ecl_indices[m_full]) == 0):
+                slope_measure[i] = slope[added_snr == snr_measure[i]]
+            else:
+                slope_measure[i] = slope[added_snr[m_full] == np.max(added_snr[m_full])]
     optimise = slope_measure * snr_measure**0.5
     # incorporate the deviation measure
     deviation[0] = 0

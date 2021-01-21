@@ -256,6 +256,7 @@ def find_best_n(times, signal, min_n=1, max_n=80):
         ecl_indices, added_snr, flags = assemble_eclipses(times, signal, signal_s, peaks, added_snr, slope_sign)
         # test the deviation by the runs test with the smooth subtracted signal
         deviation[i] = ut.runs_test(signal - signal_s)
+        ecl_mask = mask_eclipses(times, ecl_indices)
         if (len(flags) > 0):
             m_full = (flags == 0)  # mask of the full eclipses
             m_left = (flags == 1)
@@ -269,31 +270,23 @@ def find_best_n(times, signal, min_n=1, max_n=80):
             # take the inner points as next best estimate for half eclipses
             ecl_mid[m_left] = times[l_i[m_left]]
             ecl_mid[m_right] = times[r_i[m_right]]
-            if (len(ecl_indices[m_full]) == 0):
-                # no full eclipses
-                height_right = signal_s[ecl_indices[:, 0]] - signal_s[ecl_indices[:, 1]]
-                height_left = signal_s[ecl_indices[:, -1]] - signal_s[ecl_indices[:, -2]]
-                width_right = times[ecl_indices[:, 1]] - times[ecl_indices[:, 0]]
-                width_left = times[ecl_indices[:, -1]] - times[ecl_indices[:, -2]]
-                # either right or left is always going to be zero now (only half eclipses)
-                slope = (height_right + height_left) / (width_right + width_left)
-                # length = (height_right**2 + width_right**2 + height_left**2 + width_left**2)**(1/2)
-            else:
-                height_right = signal_s[ecl_indices[m_full, 0]] - signal_s[ecl_indices[m_full, 1]]
-                height_left = signal_s[ecl_indices[m_full, -1]] - signal_s[ecl_indices[m_full, -2]]
-                width_right = times[ecl_indices[m_full, 1]] - times[ecl_indices[m_full, 0]]
-                width_left = times[ecl_indices[m_full, -1]] - times[ecl_indices[m_full, -2]]
-                slope_right = height_right / width_right
-                slope_left = height_left / width_left
-                slope = (slope_right + slope_left) / 2
-                # length_right = (height_right**2 + width_right**2)**(1/2)
-                # length_left = (height_left**2 + width_left**2)**(1/2)
-                # length = (length_right + length_left) / 2
-                # todo: add slope length to slope measure for faster data rates
-            slope_norm = np.percentile(np.abs(r_derivs[0]), 10)
+            # snr_measure
+            snr_measure[i] = np.max(added_snr)
+            high_snr = (added_snr > 0.9 * snr_measure[i])
+            # slope_measure
+            height_right = signal_s[ecl_indices[:, 0]] - signal_s[ecl_indices[:, 1]]
+            height_left = signal_s[ecl_indices[:, -1]] - signal_s[ecl_indices[:, -2]]
+            width_right = times[ecl_indices[:, 1]] - times[ecl_indices[:, 0]]
+            width_left = times[ecl_indices[:, -1]] - times[ecl_indices[:, -2]]
+            slope = (height_right + height_left) / (width_right + width_left)
+            slope_right = height_right[m_full] / width_right[m_full]
+            slope_left = height_left[m_full] / width_left[m_full]
+            slope[m_full] = (slope_right + slope_left) / 2
+            slope_norm = np.percentile(np.abs(r_derivs[0, ecl_mask]), 10) #np.percentile(np.abs(r_derivs[0]), 10)
+            slope_measure[i] = np.mean(slope[high_snr]) / slope_norm
             # todo: look at improving this
-            slope_measure[i] = np.percentile(slope, 90) / slope_norm
-            # check for eclipses with few datapoints
+            # slope_measure[i] = np.percentile(slope, 90) / slope_norm
+            # check for eclipses with few data points
             if (np.median(ecl_indices[:, -1] - ecl_indices[:, 0]) < 10):
                 single = np.zeros(len(flags), dtype=np.bool_)
                 for j, ecl in enumerate(ecl_indices):
@@ -304,11 +297,7 @@ def find_best_n(times, signal, min_n=1, max_n=80):
                     single[j] = (n_below == 1)
                 if (len(ecl_indices[single]) > max(10, 0.1 * len(ecl_indices))) & (n == 1):
                     slope_measure[i] *= 0.5
-            snr_measure[i] = np.max(added_snr)
-            if (len(ecl_indices[m_full]) == 0):
-                slope_measure[i] = slope[added_snr == snr_measure[i]]
-            else:
-                slope_measure[i] = slope[added_snr[m_full] == np.max(added_snr[m_full])]
+            
     optimise = slope_measure * snr_measure**0.5
     # incorporate the deviation measure
     deviation[0] = 0

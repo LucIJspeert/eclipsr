@@ -276,6 +276,7 @@ def find_best_n(times, signal, min_n=1, max_n=80):
                 width_left = times[ecl_indices[:, -1]] - times[ecl_indices[:, -2]]
                 # either right or left is always going to be zero now (only half eclipses)
                 slope = (height_right + height_left) / (width_right + width_left)
+                length = (height_right**2 + width_right**2 + height_left**2 + width_left**2)**(1/2)
             else:
                 height_right = signal_s[ecl_indices[m_full, 0]] - signal_s[ecl_indices[m_full, 1]]
                 height_left = signal_s[ecl_indices[m_full, -1]] - signal_s[ecl_indices[m_full, -2]]
@@ -284,8 +285,11 @@ def find_best_n(times, signal, min_n=1, max_n=80):
                 slope_right = height_right / width_right
                 slope_left = height_left / width_left
                 slope = (slope_right + slope_left) / 2
+                length_right = (height_right**2 + width_right**2)**(1/2)
+                length_left = (height_left**2 + width_left**2)**(1/2)
+                length = (length_right + length_left) / 2
                 # todo: add slope length to slope measure for faster data rates
-            slope_measure[i] = np.percentile(slope, 90)
+            slope_measure[i] = np.percentile(slope * length**0.5, 90)
             # check for eclipses with few datapoints
             if (np.median(ecl_indices[:, -1] - ecl_indices[:, 0]) < 10):
                 single = np.zeros(len(flags), dtype=np.bool_)
@@ -313,16 +317,16 @@ def find_best_n(times, signal, min_n=1, max_n=80):
             optimise[sl_cut + 1:] = 0
     # determine best n from peak in optimise
     best_n = n_range[np.argmax(optimise)]
-    # import matplotlib.pyplot as plt
-    # fig, ax = plt.subplots()
-    # ax.plot(n_range, optimise, label='optimise')
-    # ax.plot(n_range, deviation, label='deviation')
-    # ax.plot(n_range, slope_measure, label='slope_measure')
-    # ax.plot(n_range, snr_measure**0.5, label='snr_measure')
-    # ax.plot(n_range, sine_like, label='sine_like')
-    # plt.legend()
-    # plt.tight_layout()
-    # plt.show()
+    import matplotlib.pyplot as plt
+    fig, ax = plt.subplots()
+    ax.plot(n_range, optimise, label='optimise')
+    ax.plot(n_range, deviation, label='deviation')
+    ax.plot(n_range, slope_measure, label='slope_measure')
+    ax.plot(n_range, snr_measure**0.5, label='snr_measure')
+    ax.plot(n_range, sine_like, label='sine_like')
+    plt.legend()
+    plt.tight_layout()
+    plt.show()
     return best_n
 
 

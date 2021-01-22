@@ -249,6 +249,8 @@ def find_best_n(times, signal, min_n=1, max_n=80):
     sine_like = np.zeros([len(n_range)], dtype=bool)
     slope_measure = np.zeros([len(n_range)])
     snr_measure = np.zeros([len(n_range)])
+    depth_measure = np.zeros([len(n_range)])
+    smoothness = np.zeros([len(n_range)])
     # go through values of n to get the best one
     for i, n in enumerate(n_range):
         signal_s, r_derivs, s_derivs = prepare_derivatives(times, signal, n)
@@ -256,7 +258,6 @@ def find_best_n(times, signal, min_n=1, max_n=80):
         ecl_indices, added_snr, flags = assemble_eclipses(times, signal, signal_s, peaks, added_snr, slope_sign)
         # test the deviation by the runs test with the smooth subtracted signal
         deviation[i] = ut.runs_test(signal - signal_s)
-        ecl_mask = mask_eclipses(times, ecl_indices)
         if (len(flags) > 0):
             m_full = (flags == 0)  # mask of the full eclipses
             m_left = (flags == 1)
@@ -272,7 +273,11 @@ def find_best_n(times, signal, min_n=1, max_n=80):
             ecl_mid[m_right] = times[r_i[m_right]]
             # snr_measure
             snr_measure[i] = np.max(added_snr)
-            high_snr = (added_snr > 0.9 * snr_measure[i])
+            high_snr_value = max(0.5 * np.max(added_snr), np.average(added_snr))
+            high_snr = (added_snr >= high_snr_value)
+            # make eclipse mask, masking only high snr ones
+            ecl_mask = mask_eclipses(times, ecl_indices[high_snr])
+            smoothness[i] = 1 / (1 + np.mean(np.abs(r_derivs[3]))**2)
             # slope_measure
             height_right = signal_s[ecl_indices[:, 0]] - signal_s[ecl_indices[:, 1]]
             height_left = signal_s[ecl_indices[:, -1]] - signal_s[ecl_indices[:, -2]]
@@ -281,11 +286,10 @@ def find_best_n(times, signal, min_n=1, max_n=80):
             slope = (height_right + height_left) / (width_right + width_left)
             slope_right = height_right[m_full] / width_right[m_full]
             slope_left = height_left[m_full] / width_left[m_full]
-            slope[m_full] = (slope_right + slope_left) / 2
-            slope_norm = np.percentile(np.abs(r_derivs[0, ecl_mask]), 10) #np.percentile(np.abs(r_derivs[0]), 10)
-            slope_measure[i] = np.mean(slope[high_snr]) / slope_norm
+            slope[m_full] = (slope_right + slope_left) / 2 * 1.5  # give a bonus to full eclipses
+            slope_measure[i] = np.mean(slope[high_snr])
+            # depth_measure[i] = np.mean((height_right + height_left)[high_snr])
             # todo: look at improving this
-            # slope_measure[i] = np.percentile(slope, 90) / slope_norm
             # check for eclipses with few data points
             if (np.median(ecl_indices[:, -1] - ecl_indices[:, 0]) < 10):
                 single = np.zeros(len(flags), dtype=np.bool_)
@@ -297,8 +301,7 @@ def find_best_n(times, signal, min_n=1, max_n=80):
                     single[j] = (n_below == 1)
                 if (len(ecl_indices[single]) > max(10, 0.1 * len(ecl_indices))) & (n == 1):
                     slope_measure[i] *= 0.5
-            
-    optimise = slope_measure * snr_measure**0.5
+    optimise = slope_measure * snr_measure**(1/2)
     # incorporate the deviation measure
     deviation[0] = 0
     deviation = np.abs(deviation)
@@ -318,8 +321,10 @@ def find_best_n(times, signal, min_n=1, max_n=80):
     ax.plot(n_range, optimise, label='optimise')
     ax.plot(n_range, deviation, label='deviation')
     ax.plot(n_range, slope_measure, label='slope_measure')
-    ax.plot(n_range, snr_measure**0.5, label='snr_measure')
+    ax.plot(n_range, snr_measure / 100, label='snr_measure')
     ax.plot(n_range, sine_like, label='sine_like')
+    ax.plot(n_range, depth_measure, label='depth_measure')
+    ax.plot(n_range, smoothness, label='snr_ratio')
     plt.legend()
     plt.tight_layout()
     plt.show()

@@ -288,20 +288,9 @@ def find_best_n(times, signal, min_n=1, max_n=80):
             slope_left = height_left[m_full] / width_left[m_full]
             slope[m_full] = (slope_right + slope_left) / 2 * 1.5  # give a bonus to full eclipses
             slope_measure[i] = np.mean(slope[high_snr])
-            # depth_measure[i] = np.mean((height_right + height_left)[high_snr])
+            depth_measure[i] = np.mean((height_right + height_left)[high_snr])
             # todo: look at improving this
-            # check for eclipses with few data points
-            if (np.median(ecl_indices[:, -1] - ecl_indices[:, 0]) < 10):
-                single = np.zeros(len(flags), dtype=np.bool_)
-                for j, ecl in enumerate(ecl_indices):
-                    ecl_signal = signal[ecl[0]:ecl[-1] + 1]
-                    max_signal = np.max(ecl_signal)
-                    depth = max_signal - np.min(ecl_signal)
-                    n_below = len(ecl_signal[ecl_signal < max_signal - depth / 4])
-                    single[j] = (n_below == 1)
-                if (len(ecl_indices[single]) > max(10, 0.1 * len(ecl_indices))) & (n == 1):
-                    slope_measure[i] *= 0.5
-    optimise = slope_measure * snr_measure**(1/2)
+    optimise = slope_measure * snr_measure**(1/2) * depth_measure**(1/2)
     # incorporate the deviation measure
     deviation[0] = 0
     deviation = np.abs(deviation)
@@ -314,6 +303,11 @@ def find_best_n(times, signal, min_n=1, max_n=80):
         if (end_sl > 2):
             sl_cut = first_sl + end_sl
             optimise[sl_cut + 1:] = 0
+    if np.all(deviation < 1.05):
+        if np.any(optimise[snr_measure >= 100] > 0):
+            optimise[snr_measure < 100] = 0  # need strong smoothing for this one
+    else:
+        optimise[smoothness > 0.95] = 0  # need to not smooth too much
     # determine best n from peak in optimise
     best_n = n_range[np.argmax(optimise)]
     import matplotlib.pyplot as plt
@@ -324,7 +318,7 @@ def find_best_n(times, signal, min_n=1, max_n=80):
     ax.plot(n_range, snr_measure / 100, label='snr_measure')
     ax.plot(n_range, sine_like, label='sine_like')
     ax.plot(n_range, depth_measure, label='depth_measure')
-    ax.plot(n_range, smoothness, label='snr_ratio')
+    ax.plot(n_range, smoothness, label='smoothness')
     plt.legend()
     plt.tight_layout()
     plt.show()

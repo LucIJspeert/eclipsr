@@ -54,15 +54,18 @@ def ephem_test_from_csv(file_name):
     return result
 
 
-def ephem_from_tic(tic, all_files=None):
-    tic_files = [file for file in all_files if f'-{tic:016.0f}-' in file]
+def ephem_from_tic(tic, all_files=None, save_dir=None):
+    tic_files = [file for file in all_files if f'{tic:016.0f}' in file]
     times = np.array([])
     signal = np.array([])
     qual_flags = np.array([])
     for file in tic_files:
         tess_data = get_fits_data(file, 1)
         times = np.append(times, tess_data['TIME'])
-        signal = np.append(signal, tess_data['PDCSAP_FLUX'])
+        try:
+            signal = np.append(signal, tess_data['PDCSAP_FLUX'])
+        except KeyError:
+            signal = np.append(signal, tess_data['KSPSAP_FLUX'])
         qual_flags = np.append(qual_flags, tess_data['QUALITY'])
     
     quality = (qual_flags == 0)
@@ -71,17 +74,18 @@ def ephem_from_tic(tic, all_files=None):
     sorter = np.argsort(times)
     times = times[sorter]
     signal = signal[sorter]
-
+    
     times, signal = ut.ingest_signal(times, signal, tess_sectors=True)
     if (len(times) < 3):
         result = [-2, -2, -2, -2, -2]
     else:
         try:
-            result = ecf.find_eclipses(times, signal, mode=1, max_n=80, tess_sectors=True)
+            result = ecf.find_eclipses(times, signal, mode=5, max_n=80, tess_sectors=True)
         except:
             print(f'an error happened in the following tic: {tic}')
             result = [-1, -1, -1, -1, -1]
-    return result[:3]
+    
+    return result
 
 
 def analyse_set(target_list, function='ephem_test_from_file', n_threads=os.cpu_count()-2, **kwargs):
@@ -92,7 +96,7 @@ def analyse_set(target_list, function='ephem_test_from_file', n_threads=os.cpu_c
     [ephem_test_from_file, ephem_test_from_csv, ephem_from_tic]
     """
     t1 = time.time()
-    with mp.get_context('spawn').Pool(processes=n_threads) as pool:
+    with mp.Pool(processes=n_threads) as pool:
         results = pool.map(fct.partial(eval(function), **kwargs), target_list)
     t2 = time.time()
     print(f'Finished analysing set in: {(t2 - t1):1.2} s ({(t2 - t1) / 3600:1.2} h) for {len(target_list)} targets,')

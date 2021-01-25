@@ -307,21 +307,21 @@ def find_best_n(times, signal, min_n=1, max_n=80):
         if np.any(optimise[snr_measure >= 100] > 0):
             optimise[snr_measure < 100] = 0  # need strong smoothing for this one
     else:
-        optimise[smoothness > 0.95] = 0  # need to not smooth too much
+        optimise[smoothness > 0.999] = 0  # need to not smooth too much
     # determine best n from peak in optimise
     best_n = n_range[np.argmax(optimise)]
-    import matplotlib.pyplot as plt
-    fig, ax = plt.subplots()
-    ax.plot(n_range, optimise, label='optimise')
-    ax.plot(n_range, deviation, label='deviation')
-    ax.plot(n_range, slope_measure, label='slope_measure')
-    ax.plot(n_range, snr_measure / 100, label='snr_measure')
-    ax.plot(n_range, sine_like, label='sine_like')
-    ax.plot(n_range, depth_measure, label='depth_measure')
-    ax.plot(n_range, smoothness, label='smoothness')
-    plt.legend()
-    plt.tight_layout()
-    plt.show()
+    # import matplotlib.pyplot as plt
+    # fig, ax = plt.subplots()
+    # ax.plot(n_range, optimise, label='optimise')
+    # ax.plot(n_range, deviation, label='deviation')
+    # ax.plot(n_range, slope_measure, label='slope_measure')
+    # ax.plot(n_range, snr_measure / 100, label='snr_measure')
+    # ax.plot(n_range, sine_like, label='sine_like')
+    # ax.plot(n_range, depth_measure, label='depth_measure')
+    # ax.plot(n_range, smoothness, label='smoothness')
+    # plt.legend()
+    # plt.tight_layout()
+    # plt.show()
     return best_n
 
 
@@ -1021,13 +1021,14 @@ def construct_range(t_0, period, domain, p_min=0.1):
 
 
 @nb.njit(cache=True)
-def pattern_test(ecl_mid, added_snr, widths, time_frame, ecl_0=None, p_max=None, p_step=None):
+def pattern_test(ecl_mid, added_snr, widths, time_frame, ecl_0=None, p_max=None, p_step=None, timestep=0):
     """Test for the presence of a regular pattern in a set of eclipse midpoints.
     ecl_mid: measured eclipse positions
     added_snr: measured eclipse significance values
     widths: eclipse widths
     p_min, p_max, p_step: period range to search and step size.
     The absolute lower limit is 0.001 (assumed to be in days).
+    d_phase is the tolerance in the eclipse phase.
     """
     # set the maximum period and reference eclipse, if not given
     n_ecl = len(ecl_mid)
@@ -1069,7 +1070,7 @@ def pattern_test(ecl_mid, added_snr, widths, time_frame, ecl_0=None, p_max=None,
             # get the distances to nearest neighbours
             d_nn = np.abs(pattern[i_nn] - ecl_mid)
             # calculate which closest neighbours are less than the ecl width away
-            cn_w = (d_nn / widths < 0.5)
+            cn_w = (d_nn / widths < 0.5) & (d_nn / p < max(0.06, timestep))
             # calculate the goodness of fit
             gof[i] = len(added_snr[cn_w]) / len(pattern) * np.sum(added_snr[cn_w]) - np.sum(d_nn[cn_w])
         else:
@@ -1177,7 +1178,7 @@ def determine_primary(group_1, group_2, depths, widths, added_snr):
 
 
 # @nb.njit(cache=True)  # not sped up
-def estimate_period(ecl_mid, widths, depths, added_snr, flags):
+def estimate_period(ecl_mid, widths, depths, added_snr, flags, timestep):
     """Determines the time of the midpoint of the first primary eclipse (t0)
     and the eclipse (orbital if possible) period. Also returns an array of flags
     with a '1' for primary and '2' for secondary for each eclipse.
@@ -1233,11 +1234,12 @@ def estimate_period(ecl_mid, widths, depths, added_snr, flags):
         if (p_max > 0.001):
             # determine the best period
             height = depths / np.min(depths)  # normalised for better results
-            periods, gof = pattern_test(ecl_mid, height, widths / 2, time_frame, ecl_0=ecl_0, p_max=p_max)
+            periods, gof = pattern_test(ecl_mid, height, widths / 2, time_frame, ecl_0=ecl_0, p_max=p_max,
+                                        timestep=timestep)
             best = np.argmax(gof)
             p_best = periods[best]
             ecl_period = p_best
-            import matplotlib.pyplot as plt
+            # import matplotlib.pyplot as plt
             # fig, ax = plt.subplots()
             # ax.plot(periods, gof, marker='|')
             # get the eclipse indices of those matching the pattern
@@ -1277,6 +1279,9 @@ def estimate_period(ecl_mid, widths, depths, added_snr, flags):
                 ecl_period = 2 * ecl_period
         else:
             double_p_sep = False
+        # period is final now, so difine phase_lim
+        phase_lim_1 = max(0.02, 2.4 * timestep / ecl_period)  # how precise the eclipse phase must be matched
+        phase_lim_2 = max(0.04, 2.4 * timestep / ecl_period)  # how precise the eclipse phase must be matched
         if not double_p_sep:
             # Try finding eclipses in between the eclipses (possibly at a different phase).
             g1 = ecl_included
@@ -1288,18 +1293,18 @@ def estimate_period(ecl_mid, widths, depths, added_snr, flags):
                 phases = ut.fold_time_series(ecl_mid, ecl_period, zero=(t_0 + ecl_period / 4))
                 g1_avg_phase = np.mean(phases[g1])
                 hist, edges = np.histogram(phases[not_included], bins=50)
-                not_g1 = (edges[:-1] < g1_avg_phase - 0.04) | (edges[1:] > g1_avg_phase + 0.04)
+                not_g1 = (edges[:-1] < g1_avg_phase - phase_lim_2) | (edges[1:] > g1_avg_phase + phase_lim_2)
                 if np.any(not_g1):
                     hist_max = np.argmax(hist[not_g1])
                     in_bin = (phases >= edges[:-1][not_g1][hist_max]) & (phases <= edges[1:][not_g1][hist_max])
                     avg_phase = np.mean(phases[in_bin])
-                    g2 = not_included[(np.abs(phases[not_included] - avg_phase) < 0.02)]
+                    g2 = not_included[(np.abs(phases[not_included] - avg_phase) < phase_lim_1)]
         # refine the groups by selecting a small phase delta (giving full eclipses an advantage)
         # beware eclipses that are within the phase delta but less than the period away
         phases = ut.fold_time_series(ecl_mid, ecl_period, zero=(t_0 + ecl_period / 4))
         g1_avg_phase = np.mean(phases[g1])
-        g1_bool = (np.abs(phases - g1_avg_phase) < 0.02)
-        g1_bool[m_full] = g1_bool[m_full] | (np.abs(phases[m_full] - g1_avg_phase) < 0.04)
+        g1_bool = (np.abs(phases - g1_avg_phase) < phase_lim_1)
+        g1_bool[m_full] = g1_bool[m_full] | (np.abs(phases[m_full] - g1_avg_phase) < phase_lim_2)
         # redefine g1 and check for eclipses less than a period away (we only want to add missing eclipses)
         g1 = ecl_i[g1_bool]
         for i in g1:
@@ -1311,8 +1316,8 @@ def estimate_period(ecl_mid, widths, depths, added_snr, flags):
         g1 = ecl_i[g1_bool]
         if (len(g2) > 0):
             g2_avg_phase = np.mean(phases[g2])
-            g2_bool = (np.abs(phases - g2_avg_phase) < 0.02)
-            g2_bool[m_full] = g2_bool[m_full] | (np.abs(phases[m_full] - g2_avg_phase) < 0.04)
+            g2_bool = (np.abs(phases - g2_avg_phase) < phase_lim_1)
+            g2_bool[m_full] = g2_bool[m_full] | (np.abs(phases[m_full] - g2_avg_phase) < phase_lim_2)
             # redefine g2 and check for eclipses less than a period away
             g2 = ecl_i[g2_bool]
             for i in g2:
@@ -1701,15 +1706,12 @@ def find_eclipses(times, signal, mode=1, max_n=80, tess_sectors=True):
         # find the best number of smoothing points
         n_kernel[i] = find_best_n(times[s[0]:s[1]], signal[s[0]:s[1]], max_n=max_n)
         # calculate the derivatives
-        signal_s[s[0]:s[1]], r_derivs[:, s[0]:s[1]], s_derivs[:, s[0]:s[1]] = prepare_derivatives(times[s[0]:s[1]],
-                                                                                                  signal[s[0]:s[1]],
-                                                                                                  n_kernel[i])
+        prep_result = prepare_derivatives(times[s[0]:s[1]], signal[s[0]:s[1]], n_kernel[i])
+        signal_s[s[0]:s[1]], r_derivs[:, s[0]:s[1]], s_derivs[:, s[0]:s[1]] = prep_result
         # get the likely eclipse indices from the derivatives
-        peaks_i, added_snr_i, slope_sign_i, sine_like_i = mark_eclipses(times[s[0]:s[1]], signal[s[0]:s[1]],
-                                                                        signal_s[s[0]:s[1]],
-                                                                        s_derivs[:, s[0]:s[1]],
-                                                                        r_derivs[:, s[0]:s[1]],
-                                                                        n_kernel[i])
+        mark_result = mark_eclipses(times[s[0]:s[1]], signal[s[0]:s[1]], signal_s[s[0]:s[1]], s_derivs[:, s[0]:s[1]],
+                                    r_derivs[:, s[0]:s[1]], n_kernel[i])
+        peaks_i, added_snr_i, slope_sign_i, sine_like_i = mark_result
         # append the arrays
         peaks = np.append(peaks, peaks_i + s[0], axis=1)
         added_snr = np.append(added_snr, added_snr_i)
@@ -1727,7 +1729,8 @@ def find_eclipses(times, signal, mode=1, max_n=80, tess_sectors=True):
         # take some measurements
         ecl_mid, widths, depths, ratios = measure_eclipses(times, signal_s, ecl_indices, flags)
         # find a possible period in the eclipses
-        t_0, period, flags_pst = estimate_period(ecl_mid, widths, depths, added_snr, flags)
+        timestep = np.median(np.diff(times))
+        t_0, period, flags_pst = estimate_period(ecl_mid, widths, depths, added_snr, flags, timestep)
         if (mode == -1):
             pt.plot_period_diagnostics(times, signal, signal_s, ecl_indices, ecl_mid, widths, depths,
                                        flags, flags_pst, period)

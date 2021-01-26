@@ -7,6 +7,8 @@ Code written by: Luc IJspeert
 """
 
 import os
+import datetime
+import h5py
 import numpy as np
 import numba as nb
 
@@ -188,3 +190,72 @@ def ingest_signal(times, signal, tess_sectors=True):
     else:
         signal = normalise_counts(signal)
     return times, signal
+
+
+def save_results(results, file_name, identifier='none'):
+    """Save the full output of the find_eclipses function to an hdf5 file.
+    Give an identifier to be used in the file name.
+    """
+    # unpack all the variables
+    t_0, period, conf, sine_like, n_kernel, width_stats, depth_stats, \
+        ecl_mid, widths, depths, ratios, added_snr, ecl_indices, flags_lrf, flags_pst = results
+    # check some input
+    if not file_name.endswith('.hdf5'):
+        file_name += '.hdf5'
+    # create the file
+    with h5py.File(file_name, 'w-') as file:
+        file.attrs['identifier'] = identifier
+        file.attrs['date_time'] = str(datetime.datetime.now())
+        file.attrs['t_0'] = t_0
+        file.attrs['period'] = period
+        file.attrs['confidence'] = conf
+        file.attrs['sine_like'] = sine_like
+        file.attrs['n_kernel'] = n_kernel
+        file.attrs['width_stats'] = width_stats
+        file.attrs['depth_stats'] = depth_stats
+        file.create_dataset('ecl_mid', data=ecl_mid)
+        file.create_dataset('widths', data=widths)
+        file.create_dataset('depths', data=depths)
+        file.create_dataset('ratios', data=ratios)
+        file.create_dataset('added_snr', data=added_snr)
+        file.create_dataset('ecl_indices', data=ecl_indices)
+        file.create_dataset('flags_lrf', data=flags_lrf)
+        file.create_dataset('flags_pst', data=flags_pst)
+    return
+
+
+def load_results(file_name):
+    """Load the full output of the find_eclipses function from the hdf5 file.
+    returns an h5py file object, which has to be closed by the user (file.close()).
+    """
+    file = h5py.File(file_name, 'r')
+    return file
+    
+
+def read_results(file_name, verbose=False):
+    """Read the full output of the find_eclipses function from the hdf5 file.
+    This returns the set of variables as they appear in eclipsr and closes the file.
+    """
+    with h5py.File(file_name, 'r') as file:
+        identifier = file.attrs['identifier']
+        date_time = file.attrs['date_time']
+        t_0 = file.attrs['t_0']
+        period = file.attrs['period']
+        conf = file.attrs['confidence']
+        sine_like = file.attrs['sine_like']
+        n_kernel = file.attrs['n_kernel']
+        width_stats = file.attrs['width_stats']
+        depth_stats = file.attrs['depth_stats']
+        ecl_mid = np.copy(file['ecl_mid'])
+        widths = np.copy(file['widths'])
+        depths = np.copy(file['depths'])
+        ratios = np.copy(file['ratios'])
+        added_snr = np.copy(file['added_snr'])
+        ecl_indices = np.copy(file['ecl_indices'])
+        flags_lrf = np.copy(file['flags_lrf'])
+        flags_pst = np.copy(file['flags_pst'])
+    
+    if verbose:
+        print(f'Opened eclipsr file with identifier: {identifier}, created on {date_time}')
+    return t_0, period, conf, sine_like, n_kernel, width_stats, depth_stats, \
+        ecl_mid, widths, depths, ratios, added_snr, ecl_indices, flags_lrf, flags_pst

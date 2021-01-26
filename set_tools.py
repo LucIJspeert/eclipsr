@@ -76,15 +76,22 @@ def ephem_from_tic(tic, all_files=None, save_dir=None):
     signal = signal[sorter]
     
     times, signal = ut.ingest_signal(times, signal, tess_sectors=True)
+    
+    empty_result = (-1, -1, -1, False, 1, np.array([[-1., -1.], [-1., -1.]]), np.array([[-1., -1.], [-1., -1.]]),
+                    np.array([]), np.array([]), np.array([]), np.array([]), np.array([]),
+                    np.zeros((0, 4), dtype=np.int64), np.array([], dtype=np.int64),
+                    np.array([], dtype=np.int32))
     if (len(times) < 3):
-        result = [-2, -2, -2, -2, -2]
+        result = empty_result
     else:
         try:
-            result = ecf.find_eclipses(times, signal, mode=5, max_n=80, tess_sectors=True)
+            result = ecf.find_eclipses(times, signal, mode=2, max_n=80, tess_sectors=True)
         except:
             print(f'an error happened in the following tic: {tic}')
-            result = [-1, -1, -1, -1, -1]
+            result = empty_result
     
+    if save_dir is not None:
+        ut.save_results(result, os.path.join(save_dir, f'{tic}_eclipsr'), identifier=tic)
     return result
 
 

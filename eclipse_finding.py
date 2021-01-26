@@ -255,18 +255,18 @@ def find_best_n(times, signal, min_n=1, max_n=80):
     for i, n in enumerate(n_range):
         signal_s, r_derivs, s_derivs = prepare_derivatives(times, signal, n)
         peaks, added_snr, slope_sign, sine_like[i] = mark_eclipses(times, signal, signal_s, s_derivs, r_derivs, n)
-        ecl_indices, added_snr, flags = assemble_eclipses(times, signal, signal_s, peaks, added_snr, slope_sign)
+        ecl_indices, added_snr, flags_lrf = assemble_eclipses(times, signal, signal_s, peaks, added_snr, slope_sign)
         # test the deviation by the runs test with the smooth subtracted signal
         deviation[i] = ut.runs_test(signal - signal_s)
-        if (len(flags) > 0):
-            m_full = (flags == 0)  # mask of the full eclipses
-            m_left = (flags == 1)
-            m_right = (flags == 2)
+        if (len(flags_lrf) > 0):
+            m_full = (flags_lrf == 0)  # mask of the full eclipses
+            m_left = (flags_lrf == 1)
+            m_right = (flags_lrf == 2)
             l_o = ecl_indices[:, 0]  # left outside
             l_i = ecl_indices[:, 1]  # left inside
             r_i = ecl_indices[:, -2]  # right inside
             r_o = ecl_indices[:, -1]  # right outside
-            ecl_mid = np.zeros([len(flags)])
+            ecl_mid = np.zeros([len(flags_lrf)])
             ecl_mid[m_full] = (times[l_o[m_full]] + times[r_o[m_full]] + times[l_i[m_full]] + times[r_i[m_full]]) / 4
             # take the inner points as next best estimate for half eclipses
             ecl_mid[m_left] = times[l_i[m_left]]
@@ -796,7 +796,7 @@ def assemble_eclipses(times, signal, signal_s, peaks, added_snr, slope_sign):
     if (len(added_snr) == 0):
         # nothing to assemble
         ecl_indices = np.zeros((0, 4), dtype=np.int_)
-        flags = np.zeros(0, dtype=np.int_)
+        flags_lrf = np.zeros(0, dtype=np.int_)
     elif (len(added_snr) == 1):
         # nothing to assemble, just one candidate in/egress
         peaks_1, peaks_2_neg, peaks_2_pos, peaks_edge, peaks_bot, peaks_3, peaks_13 = peaks
@@ -805,7 +805,7 @@ def assemble_eclipses(times, signal, signal_s, peaks, added_snr, slope_sign):
         ecl_indices[0, 1] = peaks_bot[0]
         ecl_indices[0, 2] = peaks_bot[0]
         ecl_indices[0, 3] = peaks_edge[0] * (slope_sign[0] == -1) + peaks_bot[0] * (slope_sign[0] == 1)
-        flags = np.ones(1, dtype=np.int_) + int(slope_sign[0] == -1)
+        flags_lrf = np.ones(1, dtype=np.int_) + int(slope_sign[0] == -1)
     else:
         # define some recurring variables
         peaks_1, peaks_2_neg, peaks_2_pos, peaks_edge, peaks_bot, peaks_3, peaks_13 = peaks
@@ -926,20 +926,20 @@ def assemble_eclipses(times, signal, signal_s, peaks, added_snr, slope_sign):
         ecl_indices[neg_slope, 1] = peaks_bot[neg_slope]
         ecl_indices[neg_slope, 2] = peaks_bot[neg_slope]
         ecl_indices[neg_slope, 3] = peaks_edge[neg_slope]
-        flags = np.zeros((indices[-1] + 1), dtype=np.int_)
-        flags[pos_slope] = 1  # was 'lh-' for left half
-        flags[neg_slope] = 2  # was 'rh-' for right half
+        flags_lrf = np.zeros((indices[-1] + 1), dtype=np.int_)
+        flags_lrf[pos_slope] = 1  # was 'lh-' for left half
+        flags_lrf[neg_slope] = 2  # was 'rh-' for right half
         if (len(full_ecl) != 0):
             keep_ecl = np.delete(indices, full_ecl[:, 1])
             ecl_indices[full_ecl[:, 0], 2] = ecl_indices[full_ecl[:, 1], 2]
             ecl_indices[full_ecl[:, 0], 3] = ecl_indices[full_ecl[:, 1], 3]
             ecl_indices = ecl_indices[keep_ecl]
-            flags[full_ecl[:, 0]] = 0  # was 'f-'
-            flags = flags[keep_ecl]
+            flags_lrf[full_ecl[:, 0]] = 0  # was 'f-'
+            flags_lrf = flags_lrf[keep_ecl]
             added_snr[full_ecl[:, 0]] = (added_snr[full_ecl[:, 0]] + added_snr[full_ecl[:, 1]]) / 2
             added_snr = np.delete(added_snr, full_ecl[:, 1])
         # check whether eclipses consist of just one anomalous data point
-        keep = np.zeros(len(flags), dtype=np.bool_)
+        keep = np.zeros(len(flags_lrf), dtype=np.bool_)
         for i, ecl in enumerate(ecl_indices):
             ecl_signal = signal[ecl[0]:ecl[-1] + 1]
             max_signal = np.max(ecl_signal)
@@ -950,12 +950,12 @@ def assemble_eclipses(times, signal, signal_s, peaks, added_snr, slope_sign):
         if (len(added_snr[np.invert(keep)]) < max(5, 0.05 * len(ecl_indices))):
             ecl_indices = ecl_indices[keep]
             added_snr = added_snr[keep]
-            flags = flags[keep]
-    return ecl_indices, added_snr, flags
+            flags_lrf = flags_lrf[keep]
+    return ecl_indices, added_snr, flags_lrf
 
 
 @nb.njit(cache=True)
-def measure_eclipses(times, signal, ecl_indices, flags):
+def measure_eclipses(times, signal, ecl_indices, flags_lrf):
     """Get the eclipse midpoints, widths and depths.
     Eclipse depths are averaged between the in and egress side for full eclipses. In high
     noise cases, providing the smoothed light curve can give more accurate eclipse depths.
@@ -967,23 +967,23 @@ def measure_eclipses(times, signal, ecl_indices, flags):
     not mean that it is not a flat-bottomed eclipse per se. On the other hand,
     a non-zero ratio is a strong indication that there is a flat bottom.
     """
-    if (len(flags) > 0):
+    if (len(flags_lrf) > 0):
         # prepare some arrays
-        m_full = (flags == 0)  # mask of the full eclipses
-        m_left = (flags == 1)  # mask of the left halves
-        m_right = (flags == 2)  # mask of the right halves
+        m_full = (flags_lrf == 0)  # mask of the full eclipses
+        m_left = (flags_lrf == 1)  # mask of the left halves
+        m_right = (flags_lrf == 2)  # mask of the right halves
         l_o = ecl_indices[:, 0]  # left outside
         l_i = ecl_indices[:, 1]  # left inside
         r_i = ecl_indices[:, -2]  # right inside
         r_o = ecl_indices[:, -1]  # right outside
         # calculate the widths
         widths_bottom = times[r_i[m_full]] - times[l_i[m_full]]
-        widths = np.zeros(len(flags))
+        widths = np.zeros(len(flags_lrf))
         widths[m_full] = times[r_o[m_full]] - times[l_o[m_full]]
         widths[m_left] = times[l_i[m_left]] - times[l_o[m_left]]
         widths[m_right] = times[r_o[m_right]] - times[r_i[m_right]]
         # calculate the ratios: a measure for how 'flat-bottomed' it is
-        ratios = np.zeros(len(flags))
+        ratios = np.zeros(len(flags_lrf))
         ratios[m_full] = widths_bottom / widths[m_full]
         # calculate the depths
         depths_l = signal[l_o] - signal[l_i]  # can be zero
@@ -991,7 +991,7 @@ def measure_eclipses(times, signal, ecl_indices, flags):
         denom = 2 * m_full + 1 * m_left + 1 * m_right  # should give 2's and 1's (only!)
         depths = (depths_l + depths_r) / denom
         # determine the eclipse midpoints, and estimate them for half eclipses
-        ecl_mid = np.zeros(len(flags))
+        ecl_mid = np.zeros(len(flags_lrf))
         ecl_mid[m_full] = (times[l_o[m_full]] + times[r_o[m_full]] + times[l_i[m_full]] + times[r_i[m_full]]) / 4
         # take the inner points as next best estimate for half eclipses
         ecl_mid[m_left] = times[l_i[m_left]]
@@ -1178,7 +1178,7 @@ def determine_primary(group_1, group_2, depths, widths, added_snr):
 
 
 # @nb.njit(cache=True)  # not sped up
-def estimate_period(ecl_mid, widths, depths, added_snr, flags, timestep):
+def estimate_period(ecl_mid, widths, depths, added_snr, flags_lrf, timestep):
     """Determines the time of the midpoint of the first primary eclipse (t0)
     and the eclipse (orbital if possible) period. Also returns an array of flags
     with a '1' for primary and '2' for secondary for each eclipse.
@@ -1187,12 +1187,12 @@ def estimate_period(ecl_mid, widths, depths, added_snr, flags, timestep):
     """
     n_ecl = len(ecl_mid)
     ecl_i = np.arange(n_ecl)
-    m_full = (flags == 0)
+    m_full = (flags_lrf == 0)
     n_full_ecl = np.sum(m_full)
     # first establish an estimate of the period
     if (n_ecl < 2):
         # no eclipses or a single eclipse... return None
-        ecl_period = None
+        ecl_period = -1
         ecl_included = np.zeros(0, dtype=np.int_)
     elif (n_ecl == 2):
         # only two eclipses... only one guess possible
@@ -1200,7 +1200,7 @@ def estimate_period(ecl_mid, widths, depths, added_snr, flags, timestep):
         ecl_included = np.arange(len(ecl_mid))
         if (ecl_period < 0.01):
             # chance that it overlaps
-            ecl_period = None
+            ecl_period = -1
             ecl_included = np.zeros(0, dtype=np.int_)
     else:
         # sort the eclipses first
@@ -1252,10 +1252,10 @@ def estimate_period(ecl_mid, widths, depths, added_snr, flags, timestep):
             # ax.plot(period_range, phase_dev)
             # plt.show()
         else:
-            ecl_period = None
+            ecl_period = -1
             ecl_included = np.zeros(0, dtype=np.int_)
     # now better determine the primaries and secondaries and other/tertiaries
-    if ecl_period is not None:
+    if (ecl_period != -1):
         # try double the eclipse period to look for secondaries
         t_0 = ecl_mid[ecl_included][0]
         if (len(ecl_included) > 2):
@@ -1354,7 +1354,7 @@ def estimate_period(ecl_mid, widths, depths, added_snr, flags, timestep):
                 # if they are too different, revoke all prim/sec status and the period
                 flags_pst[primaries] = 3
                 flags_pst[flags_pst == 2] = 3
-                ecl_period = None
+                ecl_period = -1
         # finally, put the t_zero on the first full primary eclipse
         primaries = (flags_pst == 1)
         full_primaries = m_full & primaries
@@ -1363,23 +1363,25 @@ def estimate_period(ecl_mid, widths, depths, added_snr, flags, timestep):
         elif np.any(primaries):
             t_zero = ecl_mid[primaries][0]
         else:
-            t_zero = None
-            ecl_period = None
+            t_zero = -1
+            ecl_period = -1
         # de-sort the flags if the arrays were sorted on ecl_mid
         if (n_ecl > 2):
             flags_pst = flags_pst[np.argsort(ecl_sorter)]
     else:
-        t_zero = None
+        t_zero = -1
         flags_pst = 3 * np.ones(len(ecl_mid), dtype=np.int_)
     return t_zero, ecl_period, flags_pst
 
 
 @nb.njit(cache=True)
-def found_ratio(times, ecl_mid, prim, sec, period, n_found):
+def found_ratio(times, ecl_mid, flags_pst, period, n_found):
     """Calculates the ratio between the number of found eclipses and
     those theoretically possible given the ephemeris and gaps in the data.
     """
-    if period is None:
+    prim = (flags_pst == 1)  # primaries
+    sec = (flags_pst == 2)  # secondaries
+    if (period == -1):
         n_possible = 1
     elif (period > 0):
         gaps, gap_widths = mark_gaps(times)
@@ -1420,14 +1422,14 @@ def found_ratio(times, ecl_mid, prim, sec, period, n_found):
         n_possible = 1
     # use the number of theoretical eclipses to get the ratio
     if (n_possible != 0):
-        found_ratio = n_found / n_possible
+        fnd_ratio = n_found / n_possible
     else:
-        found_ratio = 1
+        fnd_ratio = 1
     # transform this ratio a bit for usefulness
-    if (found_ratio > 1):
-        found_ratio = 1 / found_ratio
-    found_ratio = 0.5 * found_ratio + 0.5
-    return found_ratio
+    if (fnd_ratio > 1):
+        fnd_ratio = 1 / fnd_ratio
+    fnd_ratio = 0.5 * fnd_ratio + 0.5
+    return fnd_ratio
 
 
 @nb.njit(cache=True)
@@ -1482,11 +1484,13 @@ def normalised_symmetry(times, signal, ecl_indices):
 
 
 @nb.njit(cache=True)
-def normalised_equality(added_snr, depths, widths, prim, sec):
+def normalised_equality(added_snr, depths, widths, flags_pst):
     """Calculate the deviations in added_snr, depth and width between all
     primary and all secondary eclipses to get a measure of the
     equality of eclipses
     """
+    prim = (flags_pst == 1)  # primaries
+    sec = (flags_pst == 2)  # secondaries
     n_prim = len(added_snr[prim])
     n_sec = len(added_snr[sec])
     if (n_prim > 1):
@@ -1523,7 +1527,7 @@ def normalised_equality(added_snr, depths, widths, prim, sec):
 
 @nb.njit(cache=True)
 def eclipse_confidence(times, signal_s, deriv_1r, period, ecl_indices, ecl_mid, added_snr, widths, depths,
-                       flags, flags_pst):
+                       flags_lrf, flags_pst):
     """Determine a number that expresses the confidence that we have found actual eclipses.
     Below 0.42 is probably a false positive, above 0.42 is quite probably and EB.
     """
@@ -1531,7 +1535,7 @@ def eclipse_confidence(times, signal_s, deriv_1r, period, ecl_indices, ecl_mid, 
         primaries = (flags_pst == 1)
         secondaries = (flags_pst == 2)
         prim_sec = (primaries | secondaries)
-        m_full = (flags == 0)
+        m_full = (flags_lrf == 0)
         ecl_mask = mask_eclipses(times, ecl_indices[prim_sec])
         n_found = len(ecl_mid[prim_sec])
         if (n_found != 0):
@@ -1546,7 +1550,7 @@ def eclipse_confidence(times, signal_s, deriv_1r, period, ecl_indices, ecl_mid, 
             # convert the added_snr to a value between 0 and 1
             attr_0 = np.arctan((avg_p + avg_s) / 40) * 2 / (np.pi)
             # the number of ecl vs number of theoretically visible ones
-            attr_1 = found_ratio(times, ecl_mid, primaries, secondaries, period, n_found)
+            attr_1 = found_ratio(times, ecl_mid, flags_pst, period, n_found)
             # slope of the eclipses - higher is more likely an actual eclipse
             attr_2 = normalised_slope(times, signal_s, deriv_1r, ecl_indices, ecl_mask, primaries, m_full)
             # if np.any(secondaries):
@@ -1556,7 +1560,7 @@ def eclipse_confidence(times, signal_s, deriv_1r, period, ecl_indices, ecl_mid, 
             attr_3 = normalised_symmetry(times, signal_s, ecl_indices[m_full & prim_sec])
             # if eclipse depth varies a lot - might just be pulsations
             
-            attr_4 = normalised_equality(added_snr, depths, widths, primaries, secondaries)
+            attr_4 = normalised_equality(added_snr, depths, widths, flags_pst)
             # penalty for not having any full eclipses
             penalty = 1 - 0.5 * (not np.any(m_full & prim_sec))
             confidence = attr_0 * attr_2 * np.sqrt(attr_1**2 + attr_2**2 + attr_3**2 + attr_4**2) / 2
@@ -1576,7 +1580,7 @@ def eclipse_confidence(times, signal_s, deriv_1r, period, ecl_indices, ecl_mid, 
 
 @nb.njit(cache=True)
 def eclipse_confidence_attr(times, signal_s, deriv_1r, period, ecl_indices, ecl_mid, added_snr, widths, depths,
-                            flags, flags_pst):
+                            flags_lrf, flags_pst):
     """Determine a number that expresses the confidence that we have found actual eclipses.
     Below 0.42 is probably a false positive, above 0.42 is quite probably and EB.
     """
@@ -1584,7 +1588,7 @@ def eclipse_confidence_attr(times, signal_s, deriv_1r, period, ecl_indices, ecl_
         primaries = (flags_pst == 1)
         secondaries = (flags_pst == 2)
         prim_sec = (primaries | secondaries)
-        m_full = (flags == 0)
+        m_full = (flags_lrf == 0)
         ecl_mask = mask_eclipses(times, ecl_indices[prim_sec])
         n_found = len(ecl_mid[prim_sec])
         if (n_found != 0):
@@ -1599,7 +1603,7 @@ def eclipse_confidence_attr(times, signal_s, deriv_1r, period, ecl_indices, ecl_
             # convert the added_snr to a value between 0 and 1
             attr_0 = np.arctan((avg_p + avg_s) / 40) * 2 / (np.pi)
             # the number of ecl vs number of theoretically visible ones
-            attr_1 = found_ratio(times, ecl_mid, primaries, secondaries, period, n_found)
+            attr_1 = found_ratio(times, ecl_mid, flags_pst, period, n_found)
             # slope of the eclipses - higher is more likely an actual eclipse
             attr_2 = normalised_slope(times, signal_s, deriv_1r, ecl_indices, ecl_mask, primaries, m_full)
             # if np.any(secondaries):
@@ -1609,7 +1613,7 @@ def eclipse_confidence_attr(times, signal_s, deriv_1r, period, ecl_indices, ecl_
             attr_3 = normalised_symmetry(times, signal_s, ecl_indices[m_full & prim_sec])
             # if eclipse depth varies a lot - might just be pulsations
             
-            attr_4 = normalised_equality(added_snr, depths, widths, primaries, secondaries)
+            attr_4 = normalised_equality(added_snr, depths, widths, flags_pst)
             # penalty for not having any full eclipses
             penalty = 1 - 0.5 * (not np.any(m_full & prim_sec))
             confidence = attr_0 * attr_2 * np.sqrt(attr_1**2 + attr_2**2 + attr_3**2 + attr_4**2) / 2
@@ -1649,9 +1653,9 @@ def eclipse_stats(flags_pst, widths, depths):
     return width_stats, depth_stats
 
 
-def interpret_flags(flags, flags_pst):
+def interpret_flags(flags_lrf, flags_pst):
     """Converts the flags from integers to strings for easier interpretation.
-    in flags:
+    in flags_lrf:
     0 is 'f' meaning full eclipse
     1 is 'lh' meaning left half of an eclipse (ingress)
     2 is 'rh' meaning right half of an eclipse (egress)
@@ -1660,31 +1664,32 @@ def interpret_flags(flags, flags_pst):
     2 is 's' meaning secondary
     3 is 't' meaning other or possible tertiary
     """
-    flags_str = np.zeros(len(flags), dtype='<U2')
-    flags_str[flags == 0] = 'f'
-    flags_str[flags == 1] = 'lh'
-    flags_str[flags == 2] = 'rh'
+    flags_lrf_str = np.zeros(len(flags_lrf), dtype='<U2')
+    flags_lrf_str[flags_lrf == 0] = 'f'
+    flags_lrf_str[flags_lrf == 1] = 'lh'
+    flags_lrf_str[flags_lrf == 2] = 'rh'
     flags_pst_str = np.zeros(len(flags_pst), dtype='<U2')
     flags_pst_str[flags_pst == 1] = 'p'
     flags_pst_str[flags_pst == 2] = 's'
     flags_pst_str[flags_pst == 3] = 't'
-    return flags_str, flags_pst_str
+    return flags_lrf_str, flags_pst_str
 
 
-def find_eclipses(times, signal, mode=1, max_n=80, tess_sectors=True):
+def find_eclipses(times, signal, mode=1, max_n=80, tess_sectors=False):
     """Find the eclipses, ephemeris and the statistics about the eclipses.
     There are several modes of operation:
     0: Only find and return the individual eclipses without looking for a period
-    1: Only find and return the ephemeris and confidence level
-    2: Find and return the ephemeris, confidence level and individual eclipse
-        midpoints, widths, depths and bottom ratios, plus p/s/t flags
-    3: Find and return the ephemeris, confidence level and collective stats
-        about the eclipse widths and depths (mean and std)
-    4: Return everything
+    1: Only find and return the ephemeris (t_0, period), confidence value and collective statistics
+        about the eclipse widths and depths (mean and standard deviation)
+    2: Find and return the t_0, period, confidence value and individual eclipse
+        midpoints, widths, depths, bottom ratios, added_snr, the eclipse indices,
+         plus the l/r/f and p/s/t flags_lrf (=everything)
     -1: Turn on diagnostic plots and return everything
     
-    [note] it is recommended to run ingest_signal() before running find_eclipses
-    to avoid unwanted results or errors
+    [notes] it is recommended to run ingest_signal() before running find_eclipses
+    to avoid unwanted results or errors.
+    If multiple TESS sectors are used, setting tess_sectors=True will make sure certain
+    parts of the analysis are done on a per-sector basis. This usually improves results.
     """
     # get the sector indices, or otherwise the signal is processed as one whole
     if tess_sectors:
@@ -1719,49 +1724,42 @@ def find_eclipses(times, signal, mode=1, max_n=80, tess_sectors=True):
         sine_like_arr = np.append(sine_like_arr, [sine_like_i])
     sine_like = np.sum(sine_like_arr) > len(i_sectors) / 2  # if more than half are sine like, call it sine like
     # assemble eclipse halves (all at once)
-    ecl_indices, added_snr, flags = assemble_eclipses(times, signal, signal_s, peaks, added_snr, slope_sign)
+    ecl_indices, added_snr, flags_lrf = assemble_eclipses(times, signal, signal_s, peaks, added_snr, slope_sign)
     if (len(n_kernel) == 1):
         n_kernel = n_kernel[0]  # make scalar for convenience
     if (mode == -1):
-        pt.plot_marker_diagnostics(times, signal, signal_s, s_derivs, peaks, ecl_indices, flags, n_kernel)
+        pt.plot_marker_diagnostics(times, signal, signal_s, s_derivs, peaks, ecl_indices, flags_lrf, n_kernel)
     # check if any eclipses were found, then take some measurements and find the period if possible
-    if (len(flags) != 0) & (mode != 0):
+    if (len(flags_lrf) != 0) & (mode != 0):
         # take some measurements
-        ecl_mid, widths, depths, ratios = measure_eclipses(times, signal_s, ecl_indices, flags)
+        ecl_mid, widths, depths, ratios = measure_eclipses(times, signal_s, ecl_indices, flags_lrf)
         # find a possible period in the eclipses
         timestep = np.median(np.diff(times))
-        t_0, period, flags_pst = estimate_period(ecl_mid, widths, depths, added_snr, flags, timestep)
+        t_0, period, flags_pst = estimate_period(ecl_mid, widths, depths, added_snr, flags_lrf, timestep)
         if (mode == -1):
             pt.plot_period_diagnostics(times, signal, signal_s, ecl_indices, ecl_mid, widths, depths,
-                                       flags, flags_pst, period)
+                                       flags_lrf, flags_pst, period)
         # determine the eclipse confidence
         conf = eclipse_confidence(times, signal_s, r_derivs[0], period, ecl_indices, ecl_mid,
-                                  added_snr, widths, depths, flags, flags_pst)
-    elif (len(flags) != 0):
+                                  added_snr, widths, depths, flags_lrf, flags_pst)
+    elif (len(flags_lrf) != 0):
         # take some measurements
-        ecl_mid, widths, depths, ratios = measure_eclipses(times, signal_s, ecl_indices, flags)
-        t_0, period, flags_pst, conf = -1, -1, np.array([]), -1
+        ecl_mid, widths, depths, ratios = measure_eclipses(times, signal_s, ecl_indices, flags_lrf)
+        t_0, period, flags_pst, conf = -1, -1, np.array([], dtype=np.int32), -1
     else:
         ecl_mid, widths, depths, ratios = np.array([[], [], [], []])
-        t_0, period, flags_pst, conf = -1, -1, np.array([]), -1
+        t_0, period, flags_pst, conf = -1, -1, np.array([], dtype=np.int32), -1
     # check if the width/depth statistics (collective characteristics) need to be calculated
-    if mode in [4, 5, -1]:
+    if (mode != 0):
         width_stats, depth_stats = eclipse_stats(flags_pst, widths, depths)
     # depending on the mode, return (part of) the results
     if (mode == 0):
         # return the most useful per-eclipse parameters
-        return sine_like, n_kernel, ecl_mid, widths, depths, ratios, flags, ecl_indices, added_snr
-    elif (mode == 2):
-        # return the most useful per-eclipse parameters
-        return t_0, period, conf, sine_like, n_kernel, \
-               ecl_mid, widths, depths, ratios, flags_pst, ecl_indices, added_snr
-    elif (mode == 3):
-        # return default plus width and depth stats
-        return t_0, period, conf, sine_like, n_kernel, width_stats, depth_stats
-    elif (mode in [4, -1]):
+        return sine_like, n_kernel, ecl_mid, widths, depths, ratios, added_snr, ecl_indices, flags_lrf
+    elif (mode in [2, -1]):
         # return everything
         return t_0, period, conf, sine_like, n_kernel, width_stats, depth_stats, \
-               ecl_mid, widths, depths, ratios, flags, flags_pst, ecl_indices, added_snr
+               ecl_mid, widths, depths, ratios, added_snr, ecl_indices, flags_lrf, flags_pst
     else:
         # mode == 1 or anything not noted above
-        return t_0, period, conf, sine_like, n_kernel
+        return t_0, period, conf, sine_like, n_kernel, width_stats, depth_stats

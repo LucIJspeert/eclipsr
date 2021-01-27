@@ -81,7 +81,7 @@ def ephem_from_tic(tic, all_files=None, save_dir=None):
                     np.array([]), np.array([]), np.array([]), np.array([]), np.array([]),
                     np.zeros((0, 4), dtype=np.int64), np.array([], dtype=np.int64),
                     np.array([], dtype=np.int32))
-    if (len(times) < 3):
+    if (len(times) < 10):
         result = empty_result
     else:
         try:

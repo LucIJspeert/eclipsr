@@ -1438,7 +1438,9 @@ def normalised_slope(times, signal_s, deriv_1r, ecl_indices, ecl_mask, prim_sec,
     the median derivative of the light curve outside the eclipses.
     """
     mask = prim_sec & m_full
-    if (len(ecl_indices[mask]) == 0):
+    if (len(ecl_indices[prim_sec]) == 0):
+        slope = np.zeros(1)
+    elif (len(ecl_indices[mask]) == 0):
         # no full eclipses
         height_right = signal_s[ecl_indices[prim_sec, 0]] - signal_s[ecl_indices[prim_sec, 1]]
         height_left = signal_s[ecl_indices[prim_sec, -1]] - signal_s[ecl_indices[prim_sec, -2]]
@@ -1529,7 +1531,7 @@ def normalised_equality(added_snr, depths, widths, flags_pst):
 def eclipse_confidence(times, signal_s, deriv_1r, period, ecl_indices, ecl_mid, added_snr, widths, depths,
                        flags_lrf, flags_pst):
     """Determine a number that expresses the confidence that we have found actual eclipses.
-    Below 0.42 is probably a false positive, above 0.42 is quite probably and EB.
+    Below 0.37 is probably a false positive, above 0.37 is quite probably and EB.
     """
     if (len(ecl_mid) != 0):
         primaries = (flags_pst == 1)
@@ -1582,7 +1584,7 @@ def eclipse_confidence(times, signal_s, deriv_1r, period, ecl_indices, ecl_mid, 
 def eclipse_confidence_attr(times, signal_s, deriv_1r, period, ecl_indices, ecl_mid, added_snr, widths, depths,
                             flags_lrf, flags_pst):
     """Determine a number that expresses the confidence that we have found actual eclipses.
-    Below 0.42 is probably a false positive, above 0.42 is quite probably and EB.
+    Below 0.37 is probably a false positive, above 0.37 is quite probably and EB.
     """
     if (len(ecl_mid) != 0):
         primaries = (flags_pst == 1)

@@ -8,6 +8,7 @@ Code written by: Luc IJspeert
 
 import os
 import datetime
+import warnings
 import h5py
 import numpy as np
 import numba as nb
@@ -127,10 +128,20 @@ def rescale_tess(times, signal, i_sectors):
     threshold = np.zeros(len(i_sectors))
     for i, s in enumerate(i_sectors):
         masked_s = signal[s[0]:s[1]]
-        averages[i] = np.mean(masked_s)
-        low[i] = np.mean(masked_s[masked_s < averages[i]])
-        high[i] = np.mean(masked_s[masked_s > averages[i]])
-        threshold[i] = np.mean(masked_s[masked_s > high[i]])
+        threshold[i] = np.max(masked_s) + 1  # make sure the loop is entered at least once
+        while not np.any(masked_s > threshold[i]):
+            # we might have an outlier, so redo all if condition not met
+            masked_s = np.delete(masked_s, np.argmax(masked_s))
+            averages[i] = np.mean(masked_s)
+            low[i] = np.mean(masked_s[masked_s < averages[i]])
+            high[i] = np.mean(masked_s[masked_s > averages[i]])
+            while not np.any(masked_s > high[i]):
+                # same goes here, might have an outlier
+                masked_s = np.delete(masked_s, np.argmax(masked_s))
+                averages[i] = np.mean(masked_s)
+                low[i] = np.mean(masked_s[masked_s < averages[i]])
+                high[i] = np.mean(masked_s[masked_s > averages[i]])
+            threshold[i] = np.mean(masked_s[masked_s > high[i]])
         threshold[i] = np.mean(masked_s[masked_s > threshold[i]])
     
     difference = high - low
@@ -176,17 +187,22 @@ def ingest_signal(times, signal, tess_sectors=True):
     finites = np.isfinite(signal)
     times = times[finites].astype(np.float_)
     signal = signal[finites].astype(np.float_)
+    if (len(times) < 10):
+        warnings.warn('given signal does not contain enough finite values.')
+        return np.zeros(0), np.zeros(0)
     if tess_sectors:
         i_sectors = get_tess_sectors(times)
         if (len(i_sectors) == 0):
-            raise ValueError('given times do not fall into any TESS sectors. '
-                             'Set tess_sectors=False or change the reference BJD.')
-        signal = norm_counts_tess(signal, i_sectors)
-        # rescale the different TESS sectors for more consistent amplitude and better operation
-        signal, thr_mask = rescale_tess(times, signal, i_sectors)
-        # remove upward outliers
-        times = times[thr_mask]
-        signal = signal[thr_mask]
+            warnings.warn('given times do not fall into any TESS sectors. '
+                          'Set tess_sectors=False or change the reference BJD.')
+            signal = normalise_counts(signal)
+        else:
+            signal = norm_counts_tess(signal, i_sectors)
+            # rescale the different TESS sectors for more consistent amplitude and better operation
+            signal, thr_mask = rescale_tess(times, signal, i_sectors)
+            # remove upward outliers
+            times = times[thr_mask]
+            signal = signal[thr_mask]
     else:
         signal = normalise_counts(signal)
     return times, signal

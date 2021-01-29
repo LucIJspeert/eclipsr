@@ -541,6 +541,7 @@ def mark_eclipses(times, signal, signal_s, s_derivs, r_derivs, n_kernel):
     peaks_bot = np.clip(peaks_2_pos + (n_kernel % 2), 0, max_i)
     # first check for some simple strong conditions on the eclipses
     passed_1 = (signal_s[peaks_edge] > signal_s[peaks_bot])  # signal inside must be lower
+    passed_1 &= (signal_s[peaks_edge] - signal_s[peaks_bot] < 1)  # something is wrong if too deep
     passed_1 &= (np.abs(peaks_2_neg - peaks_2_pos) > 0)  # in/egress must be at least 2 points large
     # the peak in 13 should not be right next to a much higher peak (could be sidelobe)
     left = np.clip(peaks_13 - 2, 0, max_i)

@@ -50,12 +50,18 @@ def runs_test(signal):
 
 
 @nb.njit(cache=True)
-def normalise_counts(flux_counts):
+def normalise_counts(flux_counts, i_sectors=None):
     """Median-normalises flux (counts or otherwise, should be positive) by
     dividing by the median (result varies around one and is still positive).
+    The result is positive and varies around one.
+    If i_sectors is given, the signal is processed per sector.
     """
-    med = np.median(flux_counts)
-    return flux_counts / med
+    if i_sectors is None:
+        flux_counts = flux_counts / np.median(flux_counts)
+    else:
+        for s in i_sectors:
+            flux_counts[s[0]:s[1]] = flux_counts[s[0]:s[1]] / np.median(flux_counts[s[0]:s[1]])
+    return flux_counts
 
 
 @nb.njit(cache=True)
@@ -86,17 +92,6 @@ def mag_to_mn(mag):
     return ppm_to_mn(10**(-0.4 * mag))
 
 
-@nb.njit(cache=True)  # (not sped up significantly by jit)
-def norm_counts_tess(flux_counts, i_sectors):
-    """Converts from flux (counts, should be positive) to parts per one,
-    processing the light curve per sector.
-    The result is positive and varies around one.
-    """
-    for s in i_sectors:
-        flux_counts[s[0]:s[1]] = normalise_counts(flux_counts[s[0]:s[1]])
-    return flux_counts
-
-
 def get_tess_sectors(times, bjd_ref=2457000.0):
     """Load the times of the TESS sectors from a file and return a set of
     indices indicating the separate sectors in the time series.
@@ -114,6 +109,30 @@ def get_tess_sectors(times, bjd_ref=2457000.0):
 
 
 @nb.njit(cache=True)
+def remove_outliers(signal):
+    """Removes outliers in the signal that are more than 4 standard deviations
+    higher or lower than the median (=1, signal needs to be median normalised!),
+    but only if both points adjacent to the anomaly are themselves not anomalous.
+    A boolean mask is returned with the outliers marked as false.
+    """
+    thr_mask = np.ones(len(signal), dtype=np.bool_)
+    indices = np.arange(len(signal))
+    m_s_std = np.std(signal)
+    # check for anomalously high points
+    high_p = indices[signal > 1 + 4 * m_s_std]
+    if (len(high_p) > 0):
+        high_p2 = [int(j) for j in high_p if ((j + 1 not in high_p) & (j - 1 not in high_p))]
+        thr_mask[np.array(high_p2)] = False
+    # check for anomalously low points
+    low_p = indices[signal < 1 - 4 * m_s_std]
+    if (len(low_p) > 0):
+        low_p2 = [int(j) for j in low_p if ((j + 1 not in low_p) & (j - 1 not in low_p))]
+        thr_mask[np.array(low_p2)] = False
+    # todo fix this
+    return thr_mask
+
+
+@nb.njit(cache=True)
 def rescale_tess(times, signal, i_sectors):
     """Scales different TESS sectors by a constant to make them match in amplitude.
     times are in TESS bjd by default, but a different bjd_ref can be given to use
@@ -121,6 +140,7 @@ def rescale_tess(times, signal, i_sectors):
     This rescaling will make sure the rest of eclipse finding goes as intended.
     """
     signal_copy = np.copy(signal)
+    thr_mask = np.ones(len(times), dtype=np.bool_)
     # determine the range of the signal
     low = np.zeros(len(i_sectors))
     high = np.zeros(len(i_sectors))
@@ -128,6 +148,7 @@ def rescale_tess(times, signal, i_sectors):
     threshold = np.zeros(len(i_sectors))
     for i, s in enumerate(i_sectors):
         masked_s = signal[s[0]:s[1]]
+        # find the upper and lower representative levels
         threshold[i] = np.max(masked_s) + 1  # make sure the loop is entered at least once
         while not np.any(masked_s > threshold[i]):
             # we might have an outlier, so redo all if condition not met
@@ -149,12 +170,11 @@ def rescale_tess(times, signal, i_sectors):
         min_diff = np.min(difference[difference != 0])
     else:
         min_diff = 0
-    threshold = 2 * threshold - averages  # to remove spikes (from e.g. momentum dumps)
-    thr_mask = np.ones(len(times), dtype=np.bool_)
+    threshold = 3 * threshold - averages  # to remove spikes (from e.g. momentum dumps)
     # adjust the signal so that it has a more uniform range (and reject (mask) upward outliers)
     for i, s in enumerate(i_sectors):
         signal_copy[s[0]:s[1]] = (signal[s[0]:s[1]] - averages[i]) / difference[i] * min_diff + averages[i]
-        thr_mask[s[0]:s[1]] = (signal[s[0]:s[1]] < threshold[i])
+        thr_mask[s[0]:s[1]] &= (signal[s[0]:s[1]] < threshold[i])
     return signal_copy, thr_mask
 
 
@@ -187,6 +207,7 @@ def ingest_signal(times, signal, tess_sectors=True):
     finites = np.isfinite(signal)
     times = times[finites].astype(np.float_)
     signal = signal[finites].astype(np.float_)
+    
     if (len(times) < 10):
         warnings.warn('given signal does not contain enough finite values.')
         return np.zeros(0), np.zeros(0)
@@ -196,11 +217,17 @@ def ingest_signal(times, signal, tess_sectors=True):
             warnings.warn('given times do not fall into any TESS sectors. '
                           'Set tess_sectors=False or change the reference BJD.')
             signal = normalise_counts(signal)
+            outlier_mask = remove_outliers(signal)
+            times = times[outlier_mask]
+            signal = signal[outlier_mask]
         else:
-            signal = norm_counts_tess(signal, i_sectors)
+            signal = normalise_counts(signal, i_sectors=i_sectors)
+            outlier_mask = remove_outliers(signal)
+            times = times[outlier_mask]
+            signal = signal[outlier_mask]
             # rescale the different TESS sectors for more consistent amplitude and better operation
             signal, thr_mask = rescale_tess(times, signal, i_sectors)
-            # remove upward outliers
+            # remove any other upward outliers
             times = times[thr_mask]
             signal = signal[thr_mask]
     else:

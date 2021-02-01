@@ -543,7 +543,7 @@ def mark_eclipses(times, signal, signal_s, s_derivs, r_derivs, n_kernel):
     passed_1 = (signal_s[peaks_edge] > signal_s[peaks_bot])  # signal inside must be lower
     passed_1 &= (signal_s[peaks_edge] - signal_s[peaks_bot] < 1)  # something is wrong if too deep
     passed_1 &= (np.abs(peaks_2_neg - peaks_2_pos) > 0)  # in/egress must be at least 2 points large
-    # the peak in 13 should not be right next to a much higher peak (could be sidelobe)
+    # the peak in 13 should not be right next to a much higher peak (could be side lobe)
     left = np.clip(peaks_13 - 2, 0, max_i)
     right = np.clip(peaks_13 + 2, 0, max_i)
     passed_1 &= (deriv_13s[left] < 2 * deriv_13s[peaks_13]) & (deriv_13s[right] < 2 * deriv_13s[peaks_13])
@@ -629,9 +629,13 @@ def mark_eclipses(times, signal, signal_s, s_derivs, r_derivs, n_kernel):
         pk3_diff = np.abs(deriv_3s[peaks_3] + deriv_3s[peaks_3_out])
         pk3_sum = np.abs(deriv_3s[peaks_3] - deriv_3s[peaks_3_out])
         peak_s_out = np.clip(2 * peaks_edge - peaks_bot, 0, max_i)  # mirror peaks_bot position around peaks_edge
-        passed_spikes = (pk3_diff > pk3_sum / 20)
-        passed_spikes |= (signal_s[peak_s_out] > signal_s[peaks_bot] + depths / 2)  # check signal heights
-        passed_2 &= passed_spikes
+        spikes_1 = (pk3_diff > pk3_sum / 20)
+        spikes_1 |= (signal_s[peak_s_out] > signal_s[peaks_bot] + depths / 2)  # check signal heights
+        passed_2 &= spikes_1
+        reduced_height = (signal_s[peaks_edge] - 1)
+        spikes_2 = (reduced_height / depths < 0.6)  # a large portion above 1 can indicate a spike
+        spikes_2 |= (reduced_height / np.std(signal) < 4)  # but also need to check the signal deviation
+        passed_2 &= spikes_2
 
         # select the ones that passed
         peaks_1 = peaks_1[passed_2]
@@ -939,6 +943,7 @@ def assemble_eclipses(times, signal, signal_s, peaks, added_snr, slope_sign):
             flags_lrf = flags_lrf[keep_ecl]
             added_snr[full_ecl[:, 0]] = (added_snr[full_ecl[:, 0]] + added_snr[full_ecl[:, 1]]) / 2
             added_snr = np.delete(added_snr, full_ecl[:, 1])
+    if (len(added_snr) > 0):
         # check whether eclipses consist of just one anomalous data point
         keep = np.zeros(len(flags_lrf), dtype=np.bool_)
         for i, ecl in enumerate(ecl_indices):
@@ -947,8 +952,8 @@ def assemble_eclipses(times, signal, signal_s, peaks, added_snr, slope_sign):
             depth = max_signal - np.min(ecl_signal)
             n_below = len(ecl_signal[ecl_signal < max_signal - depth / 4])
             keep[i] = (n_below > 1)
-        # if we have more than 5, or 5% of peaks 'anomalous' points, they are not so anomalous...
-        if (len(added_snr[np.invert(keep)]) < max(5, 0.05 * len(ecl_indices))):
+        # if we have more than 10, or 10% of peaks are 'anomalous' points, they are not so anomalous...
+        if (len(added_snr[np.invert(keep)]) < max(10, 0.1 * len(ecl_indices))):
             ecl_indices = ecl_indices[keep]
             added_snr = added_snr[keep]
             flags_lrf = flags_lrf[keep]

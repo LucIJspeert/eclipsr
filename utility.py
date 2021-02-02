@@ -305,5 +305,5 @@ def read_results(file_name, verbose=False):
     
     if verbose:
         print(f'Opened eclipsr file with identifier: {identifier}, created on {date_time}')
-    return t_0, period, conf, sine_like, n_kernel, width_stats, depth_stats, \
+    return t_0, period, conf, sine_like, wide, n_kernel, width_stats, depth_stats, \
         ecl_mid, widths, depths, ratios, added_snr, ecl_indices, flags_lrf, flags_pst

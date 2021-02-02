@@ -1060,7 +1060,7 @@ def pattern_test(ecl_mid, added_snr, widths, time_frame, ecl_0=None, p_max=None,
     # set the period step if not given
     if p_step is None:
         p_step = np.mean(widths) / (10 * np.ptp(ecl_mid))
-    p_step = min(p_step, 0.01 * p_max)
+    p_step = max(min(p_step, 0.01 * p_max), timestep / 1000)  # put a limit on how small it gets
     # make the period grid
     periods = np.arange(p_min, p_max, p_step)
     # fill the goodness of fit array

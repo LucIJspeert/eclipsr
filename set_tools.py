@@ -36,7 +36,7 @@ def ephem_test_from_file(file_name):
     times, signal = np.loadtxt(file_name, unpack=True)
     times, signal = ut.ingest_signal(times, signal + 1, tess_sectors=False)
     try:
-        result = ecf.find_eclipses(times, signal, mode=4, max_n=80, tess_sectors=False)
+        result = ecf.find_eclipses(times, signal, mode=1, max_n=80, tess_sectors=False)
     except:
         print(f'an error happened in the following file: {file_name}')
         result = []
@@ -47,7 +47,7 @@ def ephem_test_from_csv(file_name):
     signal, times = np.loadtxt(file_name, skiprows=1, delimiter=',', unpack=True)
     times, signal = ut.ingest_signal(times, signal + 1, tess_sectors=False)
     try:
-        result = ecf.find_eclipses(times, signal, mode=4, max_n=80, tess_sectors=True)
+        result = ecf.find_eclipses(times, signal, mode=1, max_n=80, tess_sectors=True)
     except:
         print(f'an error happened in the following file: {file_name}')
         result = []

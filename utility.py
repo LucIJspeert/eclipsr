@@ -119,16 +119,19 @@ def remove_outliers(signal):
     indices = np.arange(len(signal))
     m_s_std = np.std(signal)
     # check for anomalously high points
-    high_p = indices[signal > 1 + 4 * m_s_std]
+    high_bool = (signal > 1 + 4 * m_s_std)
+    not_high_left = np.invert(np.append(high_bool[1:], [False]))
+    not_high_right = np.invert(np.append([False], high_bool[:-1]))
+    high_p = indices[high_bool & not_high_left & not_high_right]
     if (len(high_p) > 0):
-        high_p2 = [int(j) for j in high_p if ((j + 1 not in high_p) & (j - 1 not in high_p))]
-        thr_mask[np.array(high_p2)] = False
+        thr_mask[high_p] = False
     # check for anomalously low points
-    low_p = indices[signal < 1 - 4 * m_s_std]
+    low_bool = (signal < 1 - 4 * m_s_std)
+    not_low_left = np.invert(np.append(low_bool[1:], [False]))
+    not_low_right = np.invert(np.append([False], low_bool[:-1]))
+    low_p = indices[low_bool & not_low_left & not_low_right]
     if (len(low_p) > 0):
-        low_p2 = [int(j) for j in low_p if ((j + 1 not in low_p) & (j - 1 not in low_p))]
-        thr_mask[np.array(low_p2)] = False
-    # todo fix this
+        thr_mask[low_p] = False
     return thr_mask
 
 

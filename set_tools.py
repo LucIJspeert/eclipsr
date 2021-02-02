@@ -77,7 +77,7 @@ def ephem_from_tic(tic, all_files=None, save_dir=None):
     
     times, signal = ut.ingest_signal(times, signal, tess_sectors=True)
     
-    empty_result = (-1, -1, -1, False, 1, np.array([[-1., -1.], [-1., -1.]]), np.array([[-1., -1.], [-1., -1.]]),
+    empty_result = (-1, -1, -1, False, False, 1, np.array([[-1., -1.], [-1., -1.]]), np.array([[-1., -1.], [-1., -1.]]),
                     np.array([]), np.array([]), np.array([]), np.array([]), np.array([]),
                     np.zeros((0, 4), dtype=np.int64), np.array([], dtype=np.int64),
                     np.array([], dtype=np.int32))

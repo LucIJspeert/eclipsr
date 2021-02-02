@@ -243,7 +243,7 @@ def save_results(results, file_name, identifier='none'):
     Give an identifier to be used in the file name.
     """
     # unpack all the variables
-    t_0, period, conf, sine_like, n_kernel, width_stats, depth_stats, \
+    t_0, period, conf, sine_like, wide, n_kernel, width_stats, depth_stats, \
         ecl_mid, widths, depths, ratios, added_snr, ecl_indices, flags_lrf, flags_pst = results
     # check some input
     if not file_name.endswith('.hdf5'):
@@ -256,6 +256,7 @@ def save_results(results, file_name, identifier='none'):
         file.attrs['period'] = period
         file.attrs['confidence'] = conf
         file.attrs['sine_like'] = sine_like
+        file.attrs['sine_like'] = wide
         file.attrs['n_kernel'] = n_kernel
         file.attrs['width_stats'] = width_stats
         file.attrs['depth_stats'] = depth_stats
@@ -289,6 +290,7 @@ def read_results(file_name, verbose=False):
         period = file.attrs['period']
         conf = file.attrs['confidence']
         sine_like = file.attrs['sine_like']
+        wide = file.attrs['wide']
         n_kernel = file.attrs['n_kernel']
         width_stats = file.attrs['width_stats']
         depth_stats = file.attrs['depth_stats']

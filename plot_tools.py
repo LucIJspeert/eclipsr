@@ -111,7 +111,7 @@ def plot_period_diagnostics(times, signal, signal_s, ecl_indices, ecl_mid, width
     else:
         ecl_mask = np.zeros([len(times)], dtype=bool)
         ecl_bottom_mask = np.zeros([len(times)], dtype=bool)
-    if period is not None:
+    if (period is not None) & np.any(prim):
         t_0 = ecl_mid[prim][0]
         period_array = np.arange(t_0, times[0], -period)[::-1]
         period_array = np.append(period_array, np.arange(t_0, times[-1], period))

@@ -1347,8 +1347,21 @@ def estimate_period(ecl_mid, widths, depths, added_snr, flags_lrf, timestep):
             g2 = np.zeros(0, dtype=np.int_)
             primary_g1 = True
         else:
-            primary_g1 = determine_primary(g1, g2, depths, widths, added_snr)
-        # make the primary/secondary/tertiary flags_pst
+            if (len(g1) > 2) & (len(g2) > 2):
+                # check whether we have eclipses spanning most of the period
+                avg_w_1 = np.mean(widths[g1])
+                avg_w_2 = np.mean(widths[g2])
+                if (avg_w_1 > 0.8 * ecl_period):
+                    primary_g1 = True
+                    g2 = []  # these are probably just half eclipses
+                elif (avg_w_2 > 0.8 * ecl_period):
+                    primary_g1 = False
+                    g1 = []  # these are probably just half eclipses
+                else:
+                    primary_g1 = determine_primary(g1, g2, depths, widths, added_snr)
+            else:
+                primary_g1 = determine_primary(g1, g2, depths, widths, added_snr)
+    # make the primary/secondary/tertiary flags_pst
         flags_pst = np.zeros(len(ecl_mid), dtype=np.int_)
         flags_pst[g1] = 1 * primary_g1 + 2 * (not primary_g1)
         flags_pst[g2] = 1 * (not primary_g1) + 2 * primary_g1
@@ -1567,10 +1580,17 @@ def eclipse_confidence(times, signal_s, deriv_1r, period, ecl_indices, ecl_mid, 
             # the more unequal the eclipse in/egress are, the lower the confidence
             attr_3 = normalised_symmetry(times, signal_s, ecl_indices[m_full & prim_sec])
             # if eclipse depth varies a lot - might just be pulsations
-            
             attr_4 = normalised_equality(added_snr, depths, widths, flags_pst)
-            # penalty for not having any full eclipses
-            penalty = 1 - 0.5 * (not np.any(m_full & prim_sec))
+            # penalty for not having any full eclipses, also penalty for period-wide eclipses
+            if np.any(primaries):
+                max_avg_w = np.mean(widths[primaries])
+                if np.any(secondaries):
+                    max_avg_w = max(max_avg_w, np.mean(widths[secondaries]))
+                wide = (max_avg_w > 0.8 * period)
+            else:
+                wide = False
+            penalty = 1 - 0.5 * ((not np.any(m_full & prim_sec)) | wide)
+            # confidence formula
             confidence = attr_0 * attr_2 * np.sqrt(attr_1**2 + attr_2**2 + attr_3**2 + attr_4**2) / 2
             confidence *= penalty
         else:
@@ -1620,10 +1640,17 @@ def eclipse_confidence_attr(times, signal_s, deriv_1r, period, ecl_indices, ecl_
             # the more unequal the eclipse in/egress are, the lower the confidence
             attr_3 = normalised_symmetry(times, signal_s, ecl_indices[m_full & prim_sec])
             # if eclipse depth varies a lot - might just be pulsations
-            
             attr_4 = normalised_equality(added_snr, depths, widths, flags_pst)
-            # penalty for not having any full eclipses
-            penalty = 1 - 0.5 * (not np.any(m_full & prim_sec))
+            # penalty for not having any full eclipses, also penalty for period-wide eclipses
+            if np.any(primaries):
+                max_avg_w = np.mean(widths[primaries])
+                if np.any(primaries):
+                    max_avg_w = max(max_avg_w, np.mean(widths[secondaries]))
+                wide = (max_avg_w > 0.8 * period)
+            else:
+                wide = False
+            penalty = 1 - 0.5 * ((not np.any(m_full & prim_sec)) | wide)
+            # confidence formula
             confidence = attr_0 * attr_2 * np.sqrt(attr_1**2 + attr_2**2 + attr_3**2 + attr_4**2) / 2
             confidence *= penalty
         else:
@@ -1744,6 +1771,14 @@ def find_eclipses(times, signal, mode=1, max_n=80, tess_sectors=False):
         # find a possible period in the eclipses
         timestep = np.median(np.diff(times))
         t_0, period, flags_pst = estimate_period(ecl_mid, widths, depths, added_snr, flags_lrf, timestep)
+        # check for wide eclipses relative to the period
+        if np.any(flags_pst == 1):
+            avg_w = np.mean(widths[flags_pst == 1])
+            if np.any(flags_pst == 2):
+                avg_w = max(avg_w, np.mean(widths[flags_pst == 2]))
+            wide = avg_w > 0.6 * period
+        else:
+            wide = False
         if (mode == -1):
             pt.plot_period_diagnostics(times, signal, signal_s, ecl_indices, ecl_mid, widths, depths,
                                        flags_lrf, flags_pst, period)
@@ -1753,10 +1788,10 @@ def find_eclipses(times, signal, mode=1, max_n=80, tess_sectors=False):
     elif (len(flags_lrf) != 0):
         # take some measurements
         ecl_mid, widths, depths, ratios = measure_eclipses(times, signal_s, ecl_indices, flags_lrf)
-        t_0, period, flags_pst, conf = -1, -1, np.array([], dtype=np.int32), -1
+        t_0, period, flags_pst, conf, wide = -1, -1, np.array([], dtype=np.int32), -1, False
     else:
         ecl_mid, widths, depths, ratios = np.array([[], [], [], []])
-        t_0, period, flags_pst, conf = -1, -1, np.array([], dtype=np.int32), -1
+        t_0, period, flags_pst, conf, wide = -1, -1, np.array([], dtype=np.int32), -1, False
     # check if the width/depth statistics (collective characteristics) need to be calculated
     if (mode != 0):
         width_stats, depth_stats = eclipse_stats(flags_pst, widths, depths)
@@ -1766,8 +1801,8 @@ def find_eclipses(times, signal, mode=1, max_n=80, tess_sectors=False):
         return sine_like, n_kernel, ecl_mid, widths, depths, ratios, added_snr, ecl_indices, flags_lrf
     elif (mode in [2, -1]):
         # return everything
-        return t_0, period, conf, sine_like, n_kernel, width_stats, depth_stats, \
+        return t_0, period, conf, sine_like, wide, n_kernel, width_stats, depth_stats, \
                ecl_mid, widths, depths, ratios, added_snr, ecl_indices, flags_lrf, flags_pst
     else:
         # mode == 1 or anything not noted above
-        return t_0, period, conf, sine_like, n_kernel, width_stats, depth_stats
+        return t_0, period, conf, sine_like, wide, n_kernel, width_stats, depth_stats

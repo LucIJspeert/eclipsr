@@ -1550,7 +1550,7 @@ def normalised_equality(added_snr, depths, widths, flags_pst):
 def eclipse_confidence(times, signal_s, deriv_1r, period, ecl_indices, ecl_mid, added_snr, widths, depths,
                        flags_lrf, flags_pst):
     """Determine a number that expresses the confidence that we have found actual eclipses.
-    Below 0.37 is probably a false positive, above 0.37 is quite probably and EB.
+    Below 0.38 is probably a false positive, above 0.38 is quite probably and EB.
     """
     if (len(ecl_mid) != 0):
         primaries = (flags_pst == 1)
@@ -1610,7 +1610,7 @@ def eclipse_confidence(times, signal_s, deriv_1r, period, ecl_indices, ecl_mid, 
 def eclipse_confidence_attr(times, signal_s, deriv_1r, period, ecl_indices, ecl_mid, added_snr, widths, depths,
                             flags_lrf, flags_pst):
     """Determine a number that expresses the confidence that we have found actual eclipses.
-    Below 0.37 is probably a false positive, above 0.37 is quite probably and EB.
+    Below 0.38 is probably a false positive, above 0.38 is quite probably and EB.
     """
     if (len(ecl_mid) != 0):
         primaries = (flags_pst == 1)

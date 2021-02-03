@@ -18,7 +18,7 @@ As of version 1.0 (January 2021), the way to get this code is to either download
 **ECLIPSR has only been tested in Python 3.7**. 
 Using older versions could result in unexpected errors, although any Python version >3.6 is expected to work.
 
-**Package dependencies:** The following package versions have been used in the development of this code, meaning older versions can in principle work, but this is not guaranteed. NumPy 1.17.3, SciPy 1.5.2, Numba 0.51.2, Matplotlib 3.1.1, Astropy (for .fits functionality), h5py (for saving results).
+**Package dependencies:** The following package versions have been used in the development of this code, meaning older versions can in principle work, but this is not guaranteed. NumPy 1.17.3, SciPy 1.5.2, Numba 0.51.2, Matplotlib 3.1.1, Astropy (for .fits functionality), h5py (for saving results). Newer versions are expected to work, and it is considered a bug if this is not the case.
 
 ### Example use
 

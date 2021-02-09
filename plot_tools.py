@@ -51,7 +51,7 @@ def find_best_n_dplot(n_range, deviation, optimize, sine_like, best_n):
     return
 
 
-def plot_marker_diagnostics(times, signal, signal_s, s_derivs, peaks, ecl_indices, flags, n_kernel):
+def plot_marker_diagnostics(times, signal, signal_s, s_derivs, peaks, ecl_indices, flags_lrf, n_kernel):
     """Plot the signal and derivatives with the eclipse points marked."""
     deriv_1s, deriv_2s, deriv_3s, deriv_13s = s_derivs
     peaks_1, peaks_2_neg, peaks_2_pos, peaks_edge, peaks_bot, peaks_3, peaks_13 = peaks
@@ -64,7 +64,7 @@ def plot_marker_diagnostics(times, signal, signal_s, s_derivs, peaks, ecl_indice
     ax[0].scatter(times[peaks_edge], signal[peaks_edge], label='outside', c='tab:red')
     ax[0].scatter(times[peaks_bot], signal[peaks_bot], label='inside', c='tab:green')
     for i, ecl in enumerate(ecl_indices):
-        colour = 'tab:red' * (flags[i] == 0) + 'tab:purple' * (flags[i] != 0)
+        colour = 'tab:red' * (flags_lrf[i] == 0) + 'tab:purple' * (flags_lrf[i] != 0)
         ax[0].plot(times[ecl[[0, -1]]], [plot_height, plot_height], c=colour, marker='|')
     ax[0].plot([], [], c='tab:red', marker='|', label='full eclipses')
     ax[0].plot([], [], c='tab:purple', marker='|', label='eclipse halves')
@@ -99,9 +99,9 @@ def plot_marker_diagnostics(times, signal, signal_s, s_derivs, peaks, ecl_indice
     return
 
 
-def plot_period_diagnostics(times, signal, signal_s, ecl_indices, ecl_mid, widths, depths, flags, flags_pst, period):
+def plot_period_diagnostics(times, signal, signal_s, ecl_indices, ecl_mid, widths, depths, flags_lrf, flags_pst, period):
     """Plot the signal, mark primary and secondary eclipses and plot the period."""
-    full = (flags == 0)
+    full = (flags_lrf == 0)
     prim = (flags_pst == 1)
     sec = (flags_pst == 2)
     tert = (flags_pst == 3)

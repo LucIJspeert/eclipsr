@@ -111,13 +111,10 @@ def plot_period_diagnostics(times, signal, signal_s, ecl_indices, ecl_mid, width
     else:
         ecl_mask = np.zeros([len(times)], dtype=bool)
         ecl_bottom_mask = np.zeros([len(times)], dtype=bool)
-    if (period > 0):
+    if (period > 0) & np.any(prim):
         t_0 = ecl_mid[prim][0]
         period_array = np.arange(t_0, times[0], -period)[::-1]
         period_array = np.append(period_array, np.arange(t_0, times[-1], period))
-        phases = ut.fold_time_series(ecl_mid, period, (t_0 + period / 4))
-    elif (period is not None) & np.any(prim):
-        t_0 = ecl_mid[prim][0]
         phases = ut.fold_time_series(ecl_mid, period, (t_0 + period / 4))
     else:
         phases = np.zeros([len(ecl_mid)])
@@ -154,7 +151,7 @@ def plot_period_diagnostics(times, signal, signal_s, ecl_indices, ecl_mid, width
     ax[1].scatter(times[np.invert(ecl_mask)], signal[np.invert(ecl_mask)], label='eclipses')
     ax[1].scatter(times[np.invert(ecl_bottom_mask)], signal[np.invert(ecl_bottom_mask)], label='eclipse bottoms')
     ax[1].plot(times, signal_s, marker='.', c='grey', alpha=0.6, label='smoothed light curve')
-    if (period > 0):
+    if (period > 0) & np.any(prim):
         ax[1].plot(period_array, np.full_like(period_array, height_1), c='k', marker='|')
     ax[1].scatter(ecl_mid[prim], np.full_like(ecl_mid[prim], height_2), c='tab:red', marker='^', label='primaries')
     ax[1].scatter(ecl_mid[sec], np.full_like(ecl_mid[sec], height_2), c='tab:purple', marker='s', label='secondaries')

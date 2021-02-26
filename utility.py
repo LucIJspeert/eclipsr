@@ -224,15 +224,17 @@ def ingest_signal(times, signal, tess_sectors=True):
             times = times[outlier_mask]
             signal = signal[outlier_mask]
         else:
-            signal = normalise_counts(signal, i_sectors=i_sectors)
-            outlier_mask = remove_outliers(signal)
-            times = times[outlier_mask]
-            signal = signal[outlier_mask]
             # rescale the different TESS sectors for more consistent amplitude and better operation
             signal, thr_mask = rescale_tess(times, signal, i_sectors)
             # remove any other upward outliers
             times = times[thr_mask]
             signal = signal[thr_mask]
+            # normalise
+            signal = normalise_counts(signal, i_sectors=i_sectors)
+            outlier_mask = remove_outliers(signal)
+            times = times[outlier_mask]
+            signal = signal[outlier_mask]
+
     else:
         signal = normalise_counts(signal)
     return times, signal

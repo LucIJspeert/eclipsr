@@ -22,7 +22,7 @@ description of this function for details on the modes of operation).
 >>> times, signal = ecl.utility.ingest_signal(times, signal, tess_sectors=True)
 >>> # find_eclipses() combines all of the functionality in one function
 >>> # (use the tess_sectors argument if multiple sectors of TESS data are ingested at once)
->>> t_0, period, conf, sine_like, n_kernel = ecl.find_eclipses(times, signal, mode=1, tess_sectors=True)
+>>> t_0, period, score, sine_like, n_kernel = ecl.find_eclipses(times, signal, mode=1, tess_sectors=True)
 
 -----------------------------
 Code written by: Luc IJspeert
@@ -1547,10 +1547,10 @@ def normalised_equality(added_snr, depths, widths, flags_pst):
 
 
 @nb.njit(cache=True)
-def eclipse_confidence(times, signal_s, deriv_1r, period, ecl_indices, ecl_mid, added_snr, widths, depths,
-                       flags_lrf, flags_pst):
-    """Determine a number that expresses the confidence that we have found actual eclipses.
-    Below 0.37 is probably a false positive, above 0.37 is quite probably and EB.
+def eclipse_score(times, signal_s, deriv_1r, period, ecl_indices, ecl_mid, added_snr, widths, depths,
+                  flags_lrf, flags_pst):
+    """Determine a number that expresses the score that we have found actual eclipses.
+    Below 0.38 is probably a false positive, above 0.38 is quite probably and EB.
     """
     if (len(ecl_mid) != 0):
         primaries = (flags_pst == 1)
@@ -1577,7 +1577,7 @@ def eclipse_confidence(times, signal_s, deriv_1r, period, ecl_indices, ecl_mid, 
             # if np.any(secondaries):
             #     attr_2 += normalised_slope(times, signal_s, deriv_1r, ecl_indices, ecl_mask, secondaries, m_full)
             attr_2 = np.arctan(attr_2 / 2.5) * 2 / (np.pi)
-            # the more unequal the eclipse in/egress are, the lower the confidence
+            # the more unequal the eclipse in/egress are, the lower the score
             attr_3 = normalised_symmetry(times, signal_s, ecl_indices[m_full & prim_sec])
             # if eclipse depth varies a lot - might just be pulsations
             attr_4 = normalised_equality(added_snr, depths, widths, flags_pst)
@@ -1590,27 +1590,27 @@ def eclipse_confidence(times, signal_s, deriv_1r, period, ecl_indices, ecl_mid, 
             else:
                 wide = False
             penalty = 1 - 0.5 * ((not np.any(m_full & prim_sec)) | wide)
-            # confidence formula
-            confidence = attr_0 * attr_2 * np.sqrt(attr_1**2 + attr_2**2 + attr_3**2 + attr_4**2) / 2
-            confidence *= penalty
+            # score formula
+            score = attr_0 * attr_2 * np.sqrt(attr_1**2 + attr_2**2 + attr_3**2 + attr_4**2) / 2
+            score *= penalty
         else:
             # still have the possibility of a single eclipse (so without period)
             attr_0 = np.arctan(np.max(added_snr) / 600) * 2 / (np.pi)
             attr_2 = normalised_slope(times, signal_s, deriv_1r, ecl_indices, ecl_mask, np.invert(prim_sec), m_full)
             attr_2 = np.arctan(attr_2 / 2.5) * 2 / (np.pi)
             penalty = 1 - 0.5 * (not np.any(m_full))
-            confidence = attr_0 * attr_2 * penalty
+            score = attr_0 * attr_2 * penalty
     else:
         # no eclipses identified
-        confidence = -1
-    return confidence
+        score = -1
+    return score
 
 
 @nb.njit(cache=True)
-def eclipse_confidence_attr(times, signal_s, deriv_1r, period, ecl_indices, ecl_mid, added_snr, widths, depths,
-                            flags_lrf, flags_pst):
-    """Determine a number that expresses the confidence that we have found actual eclipses.
-    Below 0.37 is probably a false positive, above 0.37 is quite probably and EB.
+def eclipse_score_attr(times, signal_s, deriv_1r, period, ecl_indices, ecl_mid, added_snr, widths, depths,
+                       flags_lrf, flags_pst):
+    """Determine a number that expresses the score that we have found actual eclipses.
+    Below 0.38 is probably a false positive, above 0.38 is quite probably and EB.
     """
     if (len(ecl_mid) != 0):
         primaries = (flags_pst == 1)
@@ -1637,7 +1637,7 @@ def eclipse_confidence_attr(times, signal_s, deriv_1r, period, ecl_indices, ecl_
             # if np.any(secondaries):
             #     attr_2 += normalised_slope(times, signal_s, deriv_1r, ecl_indices, ecl_mask, secondaries, m_full)
             attr_2 = np.arctan(attr_2 / 2.5) * 2 / (np.pi)
-            # the more unequal the eclipse in/egress are, the lower the confidence
+            # the more unequal the eclipse in/egress are, the lower the score
             attr_3 = normalised_symmetry(times, signal_s, ecl_indices[m_full & prim_sec])
             # if eclipse depth varies a lot - might just be pulsations
             attr_4 = normalised_equality(added_snr, depths, widths, flags_pst)
@@ -1650,23 +1650,23 @@ def eclipse_confidence_attr(times, signal_s, deriv_1r, period, ecl_indices, ecl_
             else:
                 wide = False
             penalty = 1 - 0.5 * ((not np.any(m_full & prim_sec)) | wide)
-            # confidence formula
-            confidence = attr_0 * attr_2 * np.sqrt(attr_1**2 + attr_2**2 + attr_3**2 + attr_4**2) / 2
-            confidence *= penalty
+            # score formula
+            score = attr_0 * attr_2 * np.sqrt(attr_1**2 + attr_2**2 + attr_3**2 + attr_4**2) / 2
+            score *= penalty
         else:
             # still have the possibility of a single eclipse (so without period)
             attr_0 = np.arctan(np.max(added_snr) / 600) * 2 / (np.pi)
             attr_2 = normalised_slope(times, signal_s, deriv_1r, ecl_indices, ecl_mask, np.invert(prim_sec), m_full)
             attr_2 = np.arctan(attr_2 / 2.5) * 2 / (np.pi)
             penalty = 1 - 0.5 * (not np.any(m_full))
-            confidence = attr_0 * attr_2 * penalty
+            score = attr_0 * attr_2 * penalty
             attr_1, attr_3, attr_4 = -0.1, -0.1, -0.1
     else:
         # no eclipses identified
-        confidence = -1
+        score = -1
         attr_0, attr_1, attr_2, attr_3, attr_4 = -0.1, -0.1, -0.1, -0.1, -0.1
         penalty = 0
-    return confidence, attr_0, attr_1, attr_2, attr_3, attr_4, penalty
+    return score, attr_0, attr_1, attr_2, attr_3, attr_4, penalty
 
 
 @nb.njit(cache=True)
@@ -1714,9 +1714,9 @@ def find_eclipses(times, signal, mode=1, max_n=80, tess_sectors=False):
     """Find the eclipses, ephemeris and the statistics about the eclipses.
     There are several modes of operation:
     0: Only find and return the individual eclipses without looking for a period
-    1: Only find and return the ephemeris (t_0, period), confidence value and collective statistics
+    1: Only find and return the ephemeris (t_0, period), eclipse score and collective statistics
         about the eclipse widths and depths (mean and standard deviation)
-    2: Find and return the t_0, period, confidence value and individual eclipse
+    2: Find and return the t_0, period, eclipse score and individual eclipse
         midpoints, widths, depths, bottom ratios, added_snr, the eclipse indices,
          plus the l/r/f and p/s/t flags_lrf (=everything)
     -1: Turn on diagnostic plots and return everything
@@ -1782,16 +1782,16 @@ def find_eclipses(times, signal, mode=1, max_n=80, tess_sectors=False):
         if (mode == -1):
             pt.plot_period_diagnostics(times, signal, signal_s, ecl_indices, ecl_mid, widths, depths,
                                        flags_lrf, flags_pst, period)
-        # determine the eclipse confidence
-        conf = eclipse_confidence(times, signal_s, r_derivs[0], period, ecl_indices, ecl_mid,
-                                  added_snr, widths, depths, flags_lrf, flags_pst)
+        # determine the eclipse score
+        score = eclipse_score(times, signal_s, r_derivs[0], period, ecl_indices, ecl_mid,
+                             added_snr, widths, depths, flags_lrf, flags_pst)
     elif (len(flags_lrf) != 0):
         # take some measurements
         ecl_mid, widths, depths, ratios = measure_eclipses(times, signal_s, ecl_indices, flags_lrf)
-        t_0, period, flags_pst, conf, wide = -1, -1, np.array([], dtype=np.int32), -1, False
+        t_0, period, flags_pst, score, wide = -1, -1, np.array([], dtype=np.int32), -1, False
     else:
         ecl_mid, widths, depths, ratios = np.array([[], [], [], []])
-        t_0, period, flags_pst, conf, wide = -1, -1, np.array([], dtype=np.int32), -1, False
+        t_0, period, flags_pst, score, wide = -1, -1, np.array([], dtype=np.int32), -1, False
     # check if the width/depth statistics (collective characteristics) need to be calculated
     if (mode != 0):
         width_stats, depth_stats = eclipse_stats(flags_pst, widths, depths)
@@ -1801,8 +1801,8 @@ def find_eclipses(times, signal, mode=1, max_n=80, tess_sectors=False):
         return sine_like, n_kernel, ecl_mid, widths, depths, ratios, added_snr, ecl_indices, flags_lrf
     elif (mode in [2, -1]):
         # return everything
-        return t_0, period, conf, sine_like, wide, n_kernel, width_stats, depth_stats, \
+        return t_0, period, score, sine_like, wide, n_kernel, width_stats, depth_stats, \
                ecl_mid, widths, depths, ratios, added_snr, ecl_indices, flags_lrf, flags_pst
     else:
         # mode == 1 or anything not noted above
-        return t_0, period, conf, sine_like, wide, n_kernel, width_stats, depth_stats
+        return t_0, period, score, sine_like, wide, n_kernel, width_stats, depth_stats

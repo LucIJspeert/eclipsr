@@ -20,6 +20,13 @@ from . import eclipse_finding as ecf
 from . import utility as ut
 
 
+# globals
+empty_result = (-1, -1, -1, False, False, 1, np.array([[-1., -1.], [-1., -1.]]), np.array([[-1., -1.], [-1., -1.]]),
+                np.array([]), np.array([]), np.array([]), np.array([]), np.array([]),
+                np.zeros((0, 4), dtype=np.int64), np.array([], dtype=np.int64),
+                np.array([], dtype=np.int32))
+
+
 def get_fits_data(file_name, index=0):
     """Returns the data from a fits file.
     Optional arg: HDUlist index.
@@ -32,8 +39,8 @@ def get_fits_data(file_name, index=0):
     return data
 
 
-def ephem_test_from_file(file_name):
-    times, signal = np.loadtxt(file_name, unpack=True)
+def ephem_from_file(file_name, delimiter=None):
+    times, signal = np.loadtxt(file_name, delimiter=delimiter, unpack=True)
     times, signal = ut.ingest_signal(times, signal + 1, tess_sectors=False)
     try:
         result = ecf.find_eclipses(times, signal, mode=1, max_n=80, tess_sectors=False)
@@ -43,18 +50,24 @@ def ephem_test_from_file(file_name):
     return result
 
 
-def ephem_test_from_csv(file_name):
-    signal, times = np.loadtxt(file_name, skiprows=1, delimiter=',', unpack=True)
+def from_file(file_name, delimiter=None, save_dir=None):
+    times, signal = np.loadtxt(file_name, delimiter=delimiter, unpack=True)
     times, signal = ut.ingest_signal(times, signal + 1, tess_sectors=False)
+    
+    source_id = os.path.basename(file_name)
+    
     try:
-        result = ecf.find_eclipses(times, signal, mode=1, max_n=80, tess_sectors=True)
+        result = ecf.find_eclipses(times, signal, mode=2, max_n=80, tess_sectors=False)
     except:
         print(f'an error happened in the following file: {file_name}')
-        result = []
+        result = empty_result
+    
+    if save_dir is not None:
+        ut.save_results(result, os.path.join(save_dir, f'{source_id}_eclipsr'), identifier=source_id)
     return result
 
 
-def ephem_from_tic(tic, all_files=None, save_dir=None):
+def from_tic(tic, all_files=None, save_dir=None):
     tic_files = [file for file in all_files if f'{tic:016.0f}' in file]
     times = np.array([])
     signal = np.array([])
@@ -77,10 +90,6 @@ def ephem_from_tic(tic, all_files=None, save_dir=None):
     
     times, signal = ut.ingest_signal(times, signal, tess_sectors=True)
     
-    empty_result = (-1, -1, -1, False, False, 1, np.array([[-1., -1.], [-1., -1.]]), np.array([[-1., -1.], [-1., -1.]]),
-                    np.array([]), np.array([]), np.array([]), np.array([]), np.array([]),
-                    np.zeros((0, 4), dtype=np.int64), np.array([], dtype=np.int64),
-                    np.array([], dtype=np.int32))
     if (len(times) < 10):
         result = empty_result
     else:

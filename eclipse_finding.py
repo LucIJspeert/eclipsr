@@ -1644,7 +1644,7 @@ def eclipse_score_attr(times, signal_s, deriv_1r, period, ecl_indices, ecl_mid, 
             # penalty for not having any full eclipses, also penalty for period-wide eclipses
             if np.any(primaries):
                 max_avg_w = np.mean(widths[primaries])
-                if np.any(primaries):
+                if np.any(secondaries):
                     max_avg_w = max(max_avg_w, np.mean(widths[secondaries]))
                 wide = (max_avg_w > 0.8 * period)
             else:

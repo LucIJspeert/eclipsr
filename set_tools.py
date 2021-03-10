@@ -109,7 +109,7 @@ def analyse_set(target_list, function='ephem_from_file', n_threads=os.cpu_count(
     The eclipsr program will be run in parallel on the set.
     
     functions that can be used:
-    [ephem_test_from_file, ephem_test_from_csv, ephem_from_tic]
+    [ephem_from_file, from_file, from_tic]
     """
     t1 = time.time()
     with mp.Pool(processes=n_threads) as pool:

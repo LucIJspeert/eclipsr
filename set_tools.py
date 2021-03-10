@@ -104,7 +104,7 @@ def from_tic(tic, all_files=None, save_dir=None):
     return result
 
 
-def analyse_set(target_list, function='ephem_test_from_file', n_threads=os.cpu_count()-2, **kwargs):
+def analyse_set(target_list, function='ephem_from_file', n_threads=os.cpu_count()-2, **kwargs):
     """Give a set of file names or target identifiers depending on the function used.
     The eclipsr program will be run in parallel on the set.
     

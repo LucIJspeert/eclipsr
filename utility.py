@@ -292,7 +292,7 @@ def read_results(file_name, verbose=False):
         period = file.attrs['period']
         try:
             score = file.attrs['score']
-        except AttributeError:
+        except KeyError:
             score = file.attrs['confidence']  # for backward compatibility
         sine_like = file.attrs['sine_like']
         wide = file.attrs['wide']

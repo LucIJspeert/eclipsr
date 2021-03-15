@@ -1361,7 +1361,7 @@ def estimate_period(ecl_mid, widths, depths, added_snr, flags_lrf, timestep):
                     primary_g1 = determine_primary(g1, g2, depths, widths, added_snr)
             else:
                 primary_g1 = determine_primary(g1, g2, depths, widths, added_snr)
-    # make the primary/secondary/tertiary flags_pst
+        # make the primary/secondary/tertiary flags_pst
         flags_pst = np.zeros(len(ecl_mid), dtype=np.int_)
         flags_pst[g1] = 1 * primary_g1 + 2 * (not primary_g1)
         flags_pst[g2] = 1 * (not primary_g1) + 2 * primary_g1
@@ -1391,6 +1391,99 @@ def estimate_period(ecl_mid, widths, depths, added_snr, flags_lrf, timestep):
         t_zero = -1
         flags_pst = 3 * np.ones(len(ecl_mid), dtype=np.int_)
     return t_zero, ecl_period, flags_pst
+
+
+def flags_pst_from_period(t_0, period, ecl_mid, depths, widths, added_snr, flags_lrf, timestep):
+    """If a period and t0 are known, this will mark the eclipses accordingly.
+    Also needs the eclipse midpoints, depths, widths and added_snr as input
+    plus the flags_lrf and the timestep of the data (median(diff(times))).
+
+    Follows almost the same exact steps as estimate_period (after it acquires a period)
+    """
+    m_full = (flags_lrf == 0)
+    domain = np.array([np.min(ecl_mid) - 1, np.max(ecl_mid) + 1])
+    # phase limits for how precise the eclipse phase must be matched
+    phase_lim_1 = max(0.02, 2.4 * timestep / period)
+    phase_lim_2 = max(0.04, 2.4 * timestep / period)
+    # extract the eclipses found at the ephemeris
+    g1 = extract_pattern(ecl_mid, widths, t_0, period, domain)
+    g2 = np.zeros(0, dtype=np.int_)
+    ecl_i = np.arange(len(ecl_mid))
+    not_included_bool = np.ones(len(ecl_i), dtype=np.bool_)
+    not_included_bool[g1] = False
+    not_included = ecl_i[not_included_bool]
+    if (len(not_included) > 0):
+        phases = ut.fold_time_series(ecl_mid, period, zero=(t_0 + period / 4))
+        g1_avg_phase = np.mean(phases[g1])
+        hist, edges = np.histogram(phases[not_included], bins=50)
+        not_g1 = (edges[:-1] < g1_avg_phase - phase_lim_2) | (edges[1:] > g1_avg_phase + phase_lim_2)
+        if np.any(not_g1):
+            hist_max = np.argmax(hist[not_g1])
+            in_bin = (phases >= edges[:-1][not_g1][hist_max]) & (phases <= edges[1:][not_g1][hist_max])
+            avg_phase = np.mean(phases[in_bin])
+            g2 = not_included[(np.abs(phases[not_included] - avg_phase) < phase_lim_1)]
+    # refine the groups by selecting a small phase delta (giving full eclipses an advantage)
+    # beware eclipses that are within the phase delta but less than the period away
+    phases = ut.fold_time_series(ecl_mid, period, zero=(t_0 + period / 4))
+    g1_avg_phase = np.mean(phases[g1])
+    g1_bool = (np.abs(phases - g1_avg_phase) < phase_lim_1)
+    g1_bool[m_full] = g1_bool[m_full] | (np.abs(phases[m_full] - g1_avg_phase) < phase_lim_2)
+    # redefine g1 and check for eclipses less than a period away (we only want to add missing eclipses)
+    g1 = ecl_i[g1_bool]
+    for i in g1:
+        nearby = (np.abs(ecl_mid[g1] - ecl_mid[i]) < 0.5 * period)
+        if (np.sum(nearby) > 1):
+            g1_bool[g1[nearby]] = False
+            keep = g1[nearby][np.argmax(added_snr[g1[nearby]])]
+            g1_bool[keep] = True
+    g1 = ecl_i[g1_bool]
+    if (len(g2) > 0):
+        g2_avg_phase = np.mean(phases[g2])
+        g2_bool = (np.abs(phases - g2_avg_phase) < phase_lim_1)
+        g2_bool[m_full] = g2_bool[m_full] | (np.abs(phases[m_full] - g2_avg_phase) < phase_lim_2)
+        # redefine g2 and check for eclipses less than a period away
+        g2 = ecl_i[g2_bool]
+        for i in g2:
+            nearby = (np.abs(ecl_mid[g2] - ecl_mid[i]) < 0.5 * period)
+            if (np.sum(nearby) > 1):
+                g2_bool[g2[nearby]] = False
+                keep = g2[nearby][np.argmax(added_snr[g2[nearby]])]
+                g2_bool[keep] = True
+        g2 = ecl_i[g2_bool]
+    # check for eclipses that include wide gaps (or are too narrow)
+    if (len(g1) > 1):
+        g1_avg_w = np.median(widths[g1])
+        g1 = g1[(widths[g1] > 0.4 * g1_avg_w) & (widths[g1] < 1.9 * g1_avg_w)]
+    if (len(g2) > 1):
+        g2_avg_w = np.median(widths[g2])
+        g2 = g2[(widths[g2] > 0.4 * g2_avg_w) & (widths[g2] < 1.9 * g2_avg_w)]
+    # determine which group is primary/secondary if possible (from the full eclipses)
+    # check if group 2 is too small
+    if (len(g2) < max(2, 0.05 * len(g1))):
+        # more likely noise
+        g2 = np.zeros(0, dtype=np.int_)
+        primary_g1 = True
+    else:
+        if (len(g1) > 2) & (len(g2) > 2):
+            # check whether we have eclipses spanning most of the period
+            avg_w_1 = np.mean(widths[g1])
+            avg_w_2 = np.mean(widths[g2])
+            if (avg_w_1 > 0.8 * period):
+                primary_g1 = True
+                g2 = []  # these are probably just half eclipses
+            elif (avg_w_2 > 0.8 * period):
+                primary_g1 = False
+                g1 = []  # these are probably just half eclipses
+            else:
+                primary_g1 = determine_primary(g1, g2, depths, widths, added_snr)
+        else:
+            primary_g1 = determine_primary(g1, g2, depths, widths, added_snr)
+    # make the primary/secondary/tertiary flags_pst
+    flags_pst = np.zeros(len(ecl_mid), dtype=np.int_)
+    flags_pst[g1] = 1 * primary_g1 + 2 * (not primary_g1)
+    flags_pst[g2] = 1 * (not primary_g1) + 2 * primary_g1
+    flags_pst[flags_pst == 0] = 3
+    return flags_pst
 
 
 @nb.njit(cache=True)

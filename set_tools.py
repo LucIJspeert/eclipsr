@@ -75,10 +75,14 @@ def from_tic(tic, all_files=None, save_dir=None):
     for file in tic_files:
         tess_data = get_fits_data(file, 1)
         times = np.append(times, tess_data['TIME'])
-        try:
+        if ('PDCSAP_FLUX' in tess_data.columns.names):
             signal = np.append(signal, tess_data['PDCSAP_FLUX'])
-        except KeyError:
-            signal = np.append(signal, tess_data['KSPSAP_FLUX'])
+        elif ('KSPSAP_FLUX' in tess_data.columns.names):
+            # signal = np.append(signal, tess_data['KSPSAP_FLUX'])
+            # actually use the SAP for MIT-QLP data
+            signal = np.append(signal, tess_data['SAP_FLUX'])
+        else:
+            signal = np.append(signal, tess_data['SAP_FLUX'])
         qual_flags = np.append(qual_flags, tess_data['QUALITY'])
     
     quality = (qual_flags == 0)

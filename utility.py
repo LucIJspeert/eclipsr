@@ -151,22 +151,34 @@ def rescale_tess(times, signal, i_sectors):
     threshold = np.zeros(len(i_sectors))
     for i, s in enumerate(i_sectors):
         masked_s = signal[s[0]:s[1]]
+        if (len(masked_s) < 4):
+            # not enough data
+            threshold[i] = 0.9 * np.min(masked_s)
+            continue
         # find the upper and lower representative levels
         threshold[i] = np.max(masked_s) + 1  # make sure the loop is entered at least once
-        while not np.any(masked_s > threshold[i]):
+        while (not np.any(masked_s > threshold[i])) & (len(masked_s) > 4):
             # we might have an outlier, so redo all if condition not met
             masked_s = np.delete(masked_s, np.argmax(masked_s))
             averages[i] = np.mean(masked_s)
             low[i] = np.mean(masked_s[masked_s < averages[i]])
             high[i] = np.mean(masked_s[masked_s > averages[i]])
-            while not np.any(masked_s > high[i]):
+            while (not np.any(masked_s > high[i])) & (len(masked_s) > 4):
                 # same goes here, might have an outlier
                 masked_s = np.delete(masked_s, np.argmax(masked_s))
                 averages[i] = np.mean(masked_s)
                 low[i] = np.mean(masked_s[masked_s < averages[i]])
                 high[i] = np.mean(masked_s[masked_s > averages[i]])
-            threshold[i] = np.mean(masked_s[masked_s > high[i]])
-        threshold[i] = np.mean(masked_s[masked_s > threshold[i]])
+            if np.any(masked_s > high[i]):
+                threshold[i] = np.mean(masked_s[masked_s > high[i]])
+            else:
+                break
+        if (len(masked_s) < 4):
+            threshold[i] = 0.9 * np.min(masked_s)  # not enough data left
+        elif not np.any(masked_s > threshold[i]):
+            continue
+        else:
+            threshold[i] = np.mean(masked_s[masked_s > threshold[i]])
     
     difference = high - low
     if np.any(difference != 0):

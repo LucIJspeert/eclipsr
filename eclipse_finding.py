@@ -201,13 +201,14 @@ def smooth_derivative(a, dt, n, mask=None):
 
 
 @nb.njit(cache=True)
-def prepare_derivatives(times, signal, n_kernel):
+def prepare_derivatives(times, signal, n_kernel, no_gaps=False):
     """Calculate various derivatives of the light curve for the purpose of eclipse finding.
     Returns all the raw and smooth arrays in vertically stacked groups
     (signal_s, r_derivs, s_derivs)
     Each curve is first smoothed before taking the derivative.
     [s=smoothed, r=raw]
     n_kernel = 1 means no smoothing happens.
+    no_gaps can be set to True to turn off correcting for gaps.
     """
     diff_t = np.diff(np.append(times, 2 * times[-1] - times[-2]))
     if (n_kernel == 1):
@@ -220,7 +221,10 @@ def prepare_derivatives(times, signal, n_kernel):
         deriv_1s, deriv_2s, deriv_3s, deriv_13s = deriv_1, deriv_2, deriv_3, deriv_13
     else:
         # get the repetition array and the repetition mask
-        n_repeats, rep_mask = repeat_points_internals(times, n_kernel)
+        if no_gaps:
+            n_repeats, rep_mask = repeat_points_internals(times, 1)
+        else:
+            n_repeats, rep_mask = repeat_points_internals(times, n_kernel)
         # array versions: e=extended, s=smoothed
         signal_e = np.repeat(signal, n_repeats)
         deriv_1, signal_s = smooth_derivative(signal_e, diff_t, n_kernel, rep_mask)

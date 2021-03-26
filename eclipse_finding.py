@@ -84,12 +84,16 @@ def mark_gaps(a):
 
 
 @nb.njit(cache=True)
-def repeat_points_internals(t, n):
+def repeat_points_internals(t, n, no_gaps=False):
     """Makes an array of the number of repetitions to be made in an array before diff
     or convolve is used on it, to take into account gaps in the data.
     It also provides a mask that can remove exactly all the duplicate points afterward.
     To be used in conjunction with numpy.repeat().
     Make sure the time-points are somewhat consistently spaced.
+    
+    no_gaps can be set to True to turn off correcting for gaps. This is meant for
+    more unevenly spaced data that does not have large gaps and will only repeat
+    the start and end of the array.
     
     example:
     n_repeats, rep_mask = repeat_points_internals(times, n)
@@ -101,6 +105,14 @@ def repeat_points_internals(t, n):
         # no repetitions made
         repetitions = np.ones(len(t), dtype=np.int_)
         repetition_mask = np.ones(len(t), dtype=np.bool_)
+    elif no_gaps:
+        # only repeat the start and end n times
+        repetitions = np.ones(len(t), dtype=np.int_)
+        repetitions[0] += (n - 1)
+        repetitions[-1] += (n - 1)
+        repetition_mask = np.ones(len(t), dtype=np.bool_)
+        repeat_ends = np.zeros(n - 1, dtype=np.bool_)
+        repetition_mask = np.concatenate((repeat_ends, repetition_mask, repeat_ends))
     else:
         # get the gap positions and start- and endpoints
         gaps, widths = mark_gaps(t)
@@ -221,10 +233,7 @@ def prepare_derivatives(times, signal, n_kernel, no_gaps=False):
         deriv_1s, deriv_2s, deriv_3s, deriv_13s = deriv_1, deriv_2, deriv_3, deriv_13
     else:
         # get the repetition array and the repetition mask
-        if no_gaps:
-            n_repeats, rep_mask = repeat_points_internals(times, 1)
-        else:
-            n_repeats, rep_mask = repeat_points_internals(times, n_kernel)
+        n_repeats, rep_mask = repeat_points_internals(times, n_kernel, no_gaps=no_gaps)
         # array versions: e=extended, s=smoothed
         signal_e = np.repeat(signal, n_repeats)
         deriv_1, signal_s = smooth_derivative(signal_e, diff_t, n_kernel, rep_mask)

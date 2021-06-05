@@ -28,7 +28,7 @@ Since the main feature of ECLIPSR is its fully automated operation, taking advan
 	>>> # it is recommended to run this before using other functions (see its function description)
 	>>> times, signal = ecl.utility.ingest_signal(times, signal, tess_sectors=True)
 	>>> # find_eclipses() combines all of the functionality into one function
-	>>> t_0, period, conf, sine_like, n_kernel = ecl.find_eclipses(times, signal, mode=1, tess_sectors=True)
+	>>> t_0, period, score, sine_like, wide, n_kernel, width_stats, depth_stats = ecl.find_eclipses(times, signal, mode=1, tess_sectors=True)
 
 The tess_sectors argument is a TESS space satellite-specific function, to be used if multiple sectors of TESS data are ingested at once. 
 The signal ingest function converts the usual TESS data (electron counts) into a median normalised time series where nan-values are removed. If your input time series is not in counts, please make sure it is median normalised (non-negative) and only contains finite values before using the find\_eclipses() function.

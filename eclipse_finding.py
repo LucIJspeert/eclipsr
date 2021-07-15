@@ -1406,13 +1406,12 @@ def estimate_period(ecl_mid, widths, depths, added_snr, flags_lrf, timestep):
     return t_zero, ecl_period, flags_pst
 
 
-def flags_pst_from_period(t_0, period, ecl_mid, depths, widths, added_snr, flags_lrf, timestep, primary_fixed=False):
+def flags_pst_from_period(t_0, period, ecl_mid, depths, widths, added_snr, flags_lrf, timestep):
     """If a period and t0 are known, this will mark the eclipses accordingly.
     Also needs the eclipse midpoints, depths, widths and added_snr as input
     plus the flags_lrf and the timestep of the data (median(diff(times))).
 
     Follows almost the same exact steps as estimate_period (after it acquires a period)
-    primary_fixed can be set to True to take the given t_0 as ground truth.
     """
     m_full = (flags_lrf == 0)
     domain = np.array([np.min(ecl_mid) - 1, np.max(ecl_mid) + 1])
@@ -1472,31 +1471,26 @@ def flags_pst_from_period(t_0, period, ecl_mid, depths, widths, added_snr, flags
         g2_avg_w = np.median(widths[g2])
         g2 = g2[(widths[g2] > 0.4 * g2_avg_w) & (widths[g2] < 1.9 * g2_avg_w)]
     # determine which group is primary/secondary if possible (from the full eclipses)
-    if not primary_fixed:
-        # check if group 2 is too small
-        if (len(g2) < max(2, 0.05 * len(g1))):
-            # more likely noise
-            g2 = np.zeros(0, dtype=np.int_)
-            primary_g1 = True
-        else:
-            if (len(g1) > 2) & (len(g2) > 2):
-                # check whether we have eclipses spanning most of the period
-                avg_w_1 = np.mean(widths[g1])
-                avg_w_2 = np.mean(widths[g2])
-                if (avg_w_1 > 0.8 * period):
-                    primary_g1 = True
-                    g2 = []  # these are probably just half eclipses
-                elif (avg_w_2 > 0.8 * period):
-                    primary_g1 = False
-                    g1 = []  # these are probably just half eclipses
-                else:
-                    primary_g1 = determine_primary(g1, g2, depths, widths, added_snr)
+    # check if group 2 is too small
+    if (len(g2) < max(2, 0.05 * len(g1))):
+        # more likely noise
+        g2 = np.zeros(0, dtype=np.int_)
+        primary_g1 = True
+    else:
+        if (len(g1) > 2) & (len(g2) > 2):
+            # check whether we have eclipses spanning most of the period
+            avg_w_1 = np.mean(widths[g1])
+            avg_w_2 = np.mean(widths[g2])
+            if (avg_w_1 > 0.8 * period):
+                primary_g1 = True
+                g2 = []  # these are probably just half eclipses
+            elif (avg_w_2 > 0.8 * period):
+                primary_g1 = False
+                g1 = []  # these are probably just half eclipses
             else:
                 primary_g1 = determine_primary(g1, g2, depths, widths, added_snr)
-    else:
-        # determine the primaries from the phase w.r.t. t_0
-        phases = ut.fold_time_series(ecl_mid, period, zero=t_0)
-        primary_g1 = (np.mean(np.abs(phases[g1])) < np.mean(np.abs(phases[g2])))
+        else:
+            primary_g1 = determine_primary(g1, g2, depths, widths, added_snr)
     # make the primary/secondary/tertiary flags_pst
     flags_pst = np.zeros(len(ecl_mid), dtype=np.int_)
     flags_pst[g1] = 1 * primary_g1 + 2 * (not primary_g1)

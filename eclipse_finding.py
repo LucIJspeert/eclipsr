@@ -1179,16 +1179,12 @@ def add_missing_ecl(group, ecl_i, ecl_mid, phases, added_snr, g_avg_phase, g_avg
 
 
 @nb.njit(cache=True)
-def test_separation(variable, group_1, group_2, phase=False):
+def test_separation(variable, group_1, group_2):
     """Simple test to see whether the variable is split into separate
-    distributions or not using the phases. If phase is set to True,
-    the phases themselves are compared instead.
+    distributions or not.
     """
     n_g1 = len(variable[group_1])
     n_g2 = len(variable[group_2])
-    if phase:
-        # test if the phases are separated by something else than 0.5
-        variable[group_1] += 0.5
     
     if (n_g2 < 3) | (n_g1 < 3):
         # no separation if there is nothing to separate,
@@ -1252,15 +1248,15 @@ def estimate_period(ecl_mid, widths, depths, added_snr, flags_lrf, timestep):
     # first establish an estimate of the period
     if (n_ecl < 2):
         # no eclipses or a single eclipse... return None
-        ecl_period = -1
+        period = -1
         ecl_included = np.zeros(0, dtype=np.int_)
     elif (n_ecl == 2):
         # only two eclipses... only one guess possible
-        ecl_period = abs(ecl_mid[1] - ecl_mid[0])
+        period = abs(ecl_mid[1] - ecl_mid[0])
         ecl_included = np.arange(len(ecl_mid))
-        if (ecl_period < 0.01):
+        if (period < 0.01):
             # chance that it overlaps
-            ecl_period = -1
+            period = -1
             ecl_included = np.zeros(0, dtype=np.int_)
     else:
         # sort the eclipses first
@@ -1271,10 +1267,10 @@ def estimate_period(ecl_mid, widths, depths, added_snr, flags_lrf, timestep):
         added_snr = added_snr[ecl_sorter]
         m_full = m_full[ecl_sorter]
         # define the time domain to search
-        time_frame = np.array([np.min(ecl_mid), np.max(ecl_mid)])
-        time_padding = 0.05 * (time_frame[1] - time_frame[0]) / len(ecl_mid)
-        time_frame[0] -= time_padding
-        time_frame[1] += time_padding
+        domain = np.array([np.min(ecl_mid), np.max(ecl_mid)])
+        time_padding = 0.05 * (domain[1] - domain[0]) / len(ecl_mid)
+        domain[0] -= time_padding
+        domain[1] += time_padding
         # set the reference zero-point eclipse
         snr_ref = max(np.mean(added_snr), 0.5 * np.max(added_snr))
         ecl_i = np.arange(len(ecl_mid))
@@ -1294,40 +1290,41 @@ def estimate_period(ecl_mid, widths, depths, added_snr, flags_lrf, timestep):
         if (p_max > 0.001):
             # determine the best period
             height = depths / np.min(depths)  # normalised for better results
-            periods, gof = pattern_test(ecl_mid, height, widths / 2, time_frame, ecl_0=ecl_0, p_max=p_max,
+            periods, gof = pattern_test(ecl_mid, height, widths / 2, domain, ecl_0=ecl_0, p_max=p_max,
                                         timestep=timestep)
             best = np.argmax(gof)
             p_best = periods[best]
-            ecl_period = p_best
+            period = p_best
             # import matplotlib.pyplot as plt
             # fig, ax = plt.subplots()
             # ax.plot(periods, gof, marker='|')
             # get the eclipse indices of those matching the pattern
-            ecl_included = extract_pattern(ecl_mid, widths, added_snr, ecl_mid[ecl_0], ecl_period, time_frame)
+            ecl_included = extract_pattern(ecl_mid, widths, added_snr, ecl_mid[ecl_0], period, domain)
             # refine the period (using all included eclipses)
             dp = 3 * np.mean(np.diff(periods))
             period_range = np.arange(p_best - dp, p_best + dp, dp / 300)
             all_phases, phase_dev = measure_phase_dev(period_range, ecl_mid[ecl_included])
-            ecl_period = period_range[np.argmin(phase_dev)]
+            period = period_range[np.argmin(phase_dev)]
             # ax.plot(period_range, phase_dev)
             # plt.show()
         else:
-            ecl_period = -1
+            period = -1
             ecl_included = np.zeros(0, dtype=np.int_)
     # now better determine the primaries and secondaries and other/tertiaries
-    if (ecl_period != -1):
-        # try double the eclipse period to look for secondaries
+    if (period != -1):
+        # redefine t_0 and extract the eclipses found at the ephemeris
         t_0 = ecl_mid[ecl_included][0]
+        # try double the eclipse period to look for secondaries
         if (len(ecl_included) > 2):
-            phases = ut.fold_time_series(ecl_mid[ecl_included], ecl_period * 2, zero=(t_0 + ecl_period / 2))
             # define groups (potentially prim/sec)
-            g1_bool = (phases < 0)
-            g1 = ecl_included[g1_bool]
-            g2_bool = (phases > 0)
-            g2 = ecl_included[g2_bool]
+            g1 = extract_pattern(ecl_mid, widths, added_snr, t_0, 2 * period, domain)
+            g2 = extract_pattern(ecl_mid, widths, added_snr, t_0 + period, 2 * period, domain)
             # test separation, first in phase, then in depth, then in added_snr and finally width
             if (n_full_ecl > 3):
-                separate_p = test_separation(phases, g1_bool, g2_bool, phase=True)
+                phases_g12 = np.zeros(len(ecl_mid))
+                phases_g12[g1] = ut.fold_time_series(ecl_mid[g1], 2 * period, zero=t_0)
+                phases_g12[g2] = ut.fold_time_series(ecl_mid[g2], 2 * period, zero=t_0 + period)
+                separate_p = test_separation(phases_g12, g1, g2, phase=True)
             else:
                 separate_p = False
             separate_d = test_separation(depths, g1, g2)
@@ -1336,64 +1333,64 @@ def estimate_period(ecl_mid, widths, depths, added_snr, flags_lrf, timestep):
             double_p_sep = separate_p | separate_d | separate_s | separate_w
             # see if doubling the period gives us two significantly different groups
             if double_p_sep:
-                ecl_period = 2 * ecl_period
+                period = 2 * period
         else:
             double_p_sep = False
-        # period is final now, so difine phase_lim
-        phase_lim_1 = max(0.02, 2.4 * timestep / ecl_period)  # how precise the eclipse phase must be matched
-        phase_lim_2 = max(0.04, 2.4 * timestep / ecl_period)  # how precise the eclipse phase must be matched
+        # period is final now
+        # define phase limit for how precise the eclipse phase must be matched
+        phase_lim = max(0.02, 2.4 * timestep / period)
+        # calculate phases - for the second group we use shifted phases by half the period
+        phases = ut.fold_time_series(ecl_mid, period, zero=t_0)
+        phases2 = phases % 1 - 0.5  # shift the phases so that 0.5 is now zero
+        # extract the eclipses found at the ephemeris
         if not double_p_sep:
-            # Try finding eclipses in between the eclipses (possibly at a different phase).
-            g1 = ecl_included
-            g2 = np.zeros(0, dtype=np.int_)
-            not_included_bool = np.ones(len(ecl_i), dtype=np.bool_)
-            not_included_bool[ecl_included] = False
+            g1 = extract_pattern(ecl_mid, widths, added_snr, t_0, period, domain)
+        if (len(g1) > 0):
+            g1_avg_phase = np.mean(phases[g1])
+            g1_avg_w = np.mean(widths[g1]) / period  # average width g1 in phase units
+        else:
+            g1_avg_phase = 0
+            g1_avg_w = 0
+        # If period was not doubled, try finding eclipses in between the eclipses (possibly at a different phase)
+        if not double_p_sep:
+            g2 = np.zeros(0, dtype=int)
+            not_included_bool = np.ones(len(ecl_i), dtype=bool)
+            not_included_bool[g1] = False
             not_included = ecl_i[not_included_bool]
             if (len(not_included) > 0):
-                phases = ut.fold_time_series(ecl_mid, ecl_period, zero=(t_0 + ecl_period / 4))
-                g1_avg_phase = np.mean(phases[g1])
-                hist, edges = np.histogram(phases[not_included], weights=added_snr[not_included], bins=50)
-                not_g1 = (edges[:-1] < g1_avg_phase - phase_lim_2) | (edges[1:] > g1_avg_phase + phase_lim_2)
+                # make a histogram of eclipse phases, weighted by added_snr
+                hist, edges = np.histogram(phases2[not_included] % 1, weights=added_snr[not_included], bins=50)
+                # exclude the area in the histogram about an eclipse width around the g1 eclipses
+                not_g1 = (edges[1:] - (g1_avg_phase + 0.5) > 0.55 * g1_avg_w)
+                not_g1 = not_g1 | (edges[:-1] - (g1_avg_phase + 0.5) < -0.55 * g1_avg_w)
                 if np.any(not_g1):
+                    # extract the best candidates for g2
                     hist_max = np.argmax(hist[not_g1])
-                    in_bin = (phases >= edges[:-1][not_g1][hist_max]) & (phases <= edges[1:][not_g1][hist_max])
-                    avg_phase = np.mean(phases[in_bin])
-                    g2 = not_included[(np.abs(phases[not_included] - avg_phase) < phase_lim_1)]
-        # refine the groups by selecting a small phase delta (giving full eclipses an advantage)
-        # beware eclipses that are within the phase delta but less than the period away
-        phases = ut.fold_time_series(ecl_mid, ecl_period, zero=(t_0 + ecl_period / 4))
-        g1_avg_phase = np.mean(phases[g1])
-        g1_bool = (np.abs(phases - g1_avg_phase) < phase_lim_1)
-        g1_bool[m_full] = g1_bool[m_full] | (np.abs(phases[m_full] - g1_avg_phase) < phase_lim_2)
-        # redefine g1 and check for eclipses less than a period away (we only want to add missing eclipses)
-        g1 = ecl_i[g1_bool]
-        for i in g1:
-            nearby = (np.abs(ecl_mid[g1] - ecl_mid[i]) < 0.5 * ecl_period)
-            if (np.sum(nearby) > 1):
-                g1_bool[g1[nearby]] = False
-                keep = g1[nearby][np.argmax(added_snr[g1[nearby]])]
-                g1_bool[keep] = True
-        g1 = ecl_i[g1_bool]
+                    in_bin = (phases2 % 1 >= edges[:-1][not_g1][hist_max]) & (phases2 % 1 <= edges[1:][not_g1][hist_max])
+                    avg_phase = np.mean(phases2[in_bin])
+                    g2 = not_included[(np.abs(phases2[not_included] - avg_phase) < phase_lim)]
+                    if (len(g2) == 1):
+                        # might have gotten some spurious peak or a triple signal, fall back to numbers
+                        hist2, edges2 = np.histogram(phases2[not_included], bins=50)
+                        hist_max = np.argmax(hist2[not_g1])
+                        if (hist_max > 1):
+                            in_bin = (phases2 >= edges2[:-1][not_g1][hist_max]) & (phases2 <= edges2[1:][not_g1][hist_max])
+                            avg_phase = np.mean(phases2[in_bin])
+                            g2 = not_included[(np.abs(phases2[not_included] - avg_phase) < phase_lim)]
+        # look for missing eclipses based on the average width of the eclipses, and add them to the group
+        if (len(g1) > 0):
+            g1 = add_missing_ecl(g1, ecl_i, ecl_mid, phases, added_snr, g1_avg_phase, g1_avg_w, period)
         if (len(g2) > 0):
-            g2_avg_phase = np.mean(phases[g2])
-            g2_bool = (np.abs(phases - g2_avg_phase) < phase_lim_1)
-            g2_bool[m_full] = g2_bool[m_full] | (np.abs(phases[m_full] - g2_avg_phase) < phase_lim_2)
-            # redefine g2 and check for eclipses less than a period away
-            g2 = ecl_i[g2_bool]
-            for i in g2:
-                nearby = (np.abs(ecl_mid[g2] - ecl_mid[i]) < 0.5 * ecl_period)
-                if (np.sum(nearby) > 1):
-                    g2_bool[g2[nearby]] = False
-                    keep = g2[nearby][np.argmax(added_snr[g2[nearby]])]
-                    g2_bool[keep] = True
-            g2 = ecl_i[g2_bool]
+            g2_avg_phase = np.mean(phases2[g2])
+            g2_avg_w = np.mean(widths[g2]) / period  # average width g2 in phase units
+            g2 = add_missing_ecl(g2, ecl_i, ecl_mid, phases2, added_snr, g2_avg_phase, g2_avg_w, period)
         # check for eclipses that include wide gaps (or are too narrow)
-        if (len(g1) > 1):
-            g1_avg_w = np.median(widths[g1])
-            g1 = g1[(widths[g1] > 0.4 * g1_avg_w) & (widths[g1] < 1.9 * g1_avg_w)]
-        if (len(g2) > 1):
-            g2_avg_w = np.median(widths[g2])
-            g2 = g2[(widths[g2] > 0.4 * g2_avg_w) & (widths[g2] < 1.9 * g2_avg_w)]
+        if (len(g1) > 2):
+            g1_med_w = np.median(widths[g1])
+            g1 = g1[(widths[g1] > 0.4 * g1_med_w) & (widths[g1] < 0.5 * period)]
+        if (len(g2) > 2):
+            g2_med_w = np.median(widths[g2])
+            g2 = g2[(widths[g2] > 0.4 * g2_med_w) & (widths[g2] < 0.5 * period)]
         # determine which group is primary/secondary if possible (from the full eclipses)
         # check if group 2 is too small
         if (len(g2) < max(2, 0.05 * len(g1))):
@@ -1405,10 +1402,10 @@ def estimate_period(ecl_mid, widths, depths, added_snr, flags_lrf, timestep):
                 # check whether we have eclipses spanning most of the period
                 avg_w_1 = np.mean(widths[g1])
                 avg_w_2 = np.mean(widths[g2])
-                if (avg_w_1 > 0.8 * ecl_period):
+                if (avg_w_1 > 0.8 * period):
                     primary_g1 = True
                     g2 = []  # these are probably just half eclipses
-                elif (avg_w_2 > 0.8 * ecl_period):
+                elif (avg_w_2 > 0.8 * period):
                     primary_g1 = False
                     g1 = []  # these are probably just half eclipses
                 else:
@@ -1427,7 +1424,7 @@ def estimate_period(ecl_mid, widths, depths, added_snr, flags_lrf, timestep):
                 # if they are too different, revoke all prim/sec status and the period
                 flags_pst[primaries] = 3
                 flags_pst[flags_pst == 2] = 3
-                ecl_period = -1
+                period = -1
         # finally, put the t_zero on the first full primary eclipse
         primaries = (flags_pst == 1)
         full_primaries = m_full & primaries
@@ -1437,14 +1434,14 @@ def estimate_period(ecl_mid, widths, depths, added_snr, flags_lrf, timestep):
             t_zero = ecl_mid[primaries][0]
         else:
             t_zero = -1
-            ecl_period = -1
+            period = -1
         # de-sort the flags if the arrays were sorted on ecl_mid
         if (n_ecl > 2):
             flags_pst = flags_pst[np.argsort(ecl_sorter)]
     else:
         t_zero = -1
         flags_pst = 3 * np.ones(len(ecl_mid), dtype=np.int_)
-    return t_zero, ecl_period, flags_pst
+    return t_zero, period, flags_pst
 
 
 def flags_pst_from_period(t_0, period, ecl_mid, depths, widths, added_snr, flags_lrf, timestep, prim_fixed=False):
@@ -1456,56 +1453,58 @@ def flags_pst_from_period(t_0, period, ecl_mid, depths, widths, added_snr, flags
     prim_fixed can be set to True to take t_0 as ground truth.
     """
     m_full = (flags_lrf == 0)
+    ecl_i = np.arange(len(ecl_mid))
     domain = np.array([np.min(ecl_mid) - 1, np.max(ecl_mid) + 1])
     # phase limit for how precise the eclipse phase must be matched
     phase_lim = max(0.02, 2.4 * timestep / period)
-    # calculate phases with an offset
-    phases = ut.fold_time_series(ecl_mid, period, zero=(t_0 + period / 4))
+    # calculate phases - for the second group we use shifted phases by half the period
+    phases = ut.fold_time_series(ecl_mid, period, zero=t_0)
+    phases2 = phases % 1 - 0.5  # shift the phases so that 0.5 is now zero
     # extract the eclipses found at the ephemeris
     g1 = extract_pattern(ecl_mid, widths, added_snr, t_0, period, domain)
-    if (len(g1) > 1):
+    if (len(g1) > 0):
         g1_avg_phase = np.mean(phases[g1])
         g1_avg_w = np.mean(widths[g1]) / period  # average width g1 in phase units
     else:
         g1_avg_phase = 0
         g1_avg_w = 0
     # determine the candidates for the second group
-    g2 = np.zeros(0, dtype=np.int_)
-    ecl_i = np.arange(len(ecl_mid))
-    not_included_bool = np.ones(len(ecl_i), dtype=np.bool_)
+    g2 = np.zeros(0, dtype=int)
+    not_included_bool = np.ones(len(ecl_i), dtype=bool)
     not_included_bool[g1] = False
     not_included = ecl_i[not_included_bool]
     if (len(not_included) > 0):
         # make a histogram of eclipse phases, weighted by added_snr
-        hist, edges = np.histogram(phases[not_included], weights=added_snr[not_included], bins=50)
+        hist, edges = np.histogram(phases2[not_included] % 1, weights=added_snr[not_included], bins=50)
         # exclude the area in the histogram about an eclipse width around the g1 eclipses
-        not_g1 = (edges[:-1] < g1_avg_phase - 0.55 * g1_avg_w) | (edges[1:] > g1_avg_phase + 0.55 * g1_avg_w)
+        not_g1 = (edges[1:] - (g1_avg_phase + 0.5) > 0.55 * g1_avg_w)
+        not_g1 = not_g1 | (edges[:-1] - (g1_avg_phase + 0.5) < -0.55 * g1_avg_w)
         if np.any(not_g1):
             # extract the best candidates for g2
             hist_max = np.argmax(hist[not_g1])
-            in_bin = (phases >= edges[:-1][not_g1][hist_max]) & (phases <= edges[1:][not_g1][hist_max])
-            avg_phase = np.mean(phases[in_bin])
-            g2 = not_included[(np.abs(phases[not_included] - avg_phase) < phase_lim)]
+            in_bin = (phases2 % 1 >= edges[:-1][not_g1][hist_max]) & (phases2 % 1 <= edges[1:][not_g1][hist_max])
+            avg_phase = np.mean(phases2[in_bin])
+            g2 = not_included[(np.abs(phases2[not_included] - avg_phase) < phase_lim)]
             if (len(g2) == 1):
                 # might have gotten some spurious peak or a triple signal, fall back to numbers
-                hist2, edges2 = np.histogram(phases[not_included], bins=50)
+                hist2, edges2 = np.histogram(phases2[not_included], bins=50)
                 hist_max = np.argmax(hist2[not_g1])
                 if (hist_max > 1):
-                    in_bin = (phases >= edges2[:-1][not_g1][hist_max]) & (phases <= edges2[1:][not_g1][hist_max])
-                    avg_phase = np.mean(phases[in_bin])
-                    g2 = not_included[(np.abs(phases[not_included] - avg_phase) < phase_lim)]
+                    in_bin = (phases2 >= edges2[:-1][not_g1][hist_max]) & (phases2 <= edges2[1:][not_g1][hist_max])
+                    avg_phase = np.mean(phases2[in_bin])
+                    g2 = not_included[(np.abs(phases2[not_included] - avg_phase) < phase_lim)]
     # look for missing eclipses based on the average width of the eclipses, and add them to the group
-    if (len(g1) > 1):
+    if (len(g1) > 0):
         g1 = add_missing_ecl(g1, ecl_i, ecl_mid, phases, added_snr, g1_avg_phase, g1_avg_w, period)
     if (len(g2) > 0):
-        g2_avg_phase = np.mean(phases[g2])
+        g2_avg_phase = np.mean(phases2[g2])
         g2_avg_w = np.mean(widths[g2]) / period  # average width g2 in phase units
-        g2 = add_missing_ecl(g2, ecl_i, ecl_mid, phases, added_snr, g2_avg_phase, g2_avg_w, period)
+        g2 = add_missing_ecl(g2, ecl_i, ecl_mid, phases2, added_snr, g2_avg_phase, g2_avg_w, period)
     # check for eclipses that include wide gaps (or are too narrow)
-    if (len(g1) > 1):
+    if (len(g1) > 2):
         g1_med_w = np.median(widths[g1])
         g1 = g1[(widths[g1] > 0.4 * g1_med_w) & (widths[g1] < 0.5 * period)]
-    if (len(g2) > 1):
+    if (len(g2) > 2):
         g2_med_w = np.median(widths[g2])
         g2 = g2[(widths[g2] > 0.4 * g2_med_w) & (widths[g2] < 0.5 * period)]
     if not prim_fixed:

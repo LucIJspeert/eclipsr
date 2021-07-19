@@ -204,7 +204,7 @@ def check_constant(signal):
     return (low < low_diff)
 
 
-def ingest_signal(times, signal, tess_sectors=True):
+def ingest_signal(times, signal, tess_sectors=True, quality=None):
     """Take a signal and process it for ingest into the algorithm.
     
     The signal (raw counts or ppm) will be median normalised
@@ -217,8 +217,18 @@ def ingest_signal(times, signal, tess_sectors=True):
     the signal will be rescaled for more consistent eclipse depths across sectors.
     The separate sectors are also rescaled to better match in amplitude.
     
+    Boolean quality flags can be provided as a mask for the light curve
+    (Data points with True are kept).
+    The light curve is also sorted before further processing.
+    
     Outputs the processed times and signal.
     """
+    if quality is not None:
+        times = times[quality]
+        signal = signal[quality]
+    sorter = np.argsort(times)
+    times = times[sorter]
+    signal = signal[sorter]
     finites = np.isfinite(signal)
     times = times[finites].astype(np.float_)
     signal = signal[finites].astype(np.float_)

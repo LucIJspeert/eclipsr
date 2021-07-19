@@ -86,13 +86,7 @@ def from_tic(tic, all_files=None, save_dir=None):
         qual_flags = np.append(qual_flags, tess_data['QUALITY'])
     
     quality = (qual_flags == 0)
-    times = times[quality]
-    signal = signal[quality]
-    sorter = np.argsort(times)
-    times = times[sorter]
-    signal = signal[sorter]
-    
-    times, signal = ut.ingest_signal(times, signal, tess_sectors=True)
+    times, signal = ut.ingest_signal(times, signal, tess_sectors=True, quality=quality)
     
     if (len(times) < 10):
         result = empty_result

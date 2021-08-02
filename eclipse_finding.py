@@ -1324,7 +1324,7 @@ def estimate_period(ecl_mid, widths, depths, added_snr, flags_lrf, timestep):
                 phases_g12 = np.zeros(len(ecl_mid))
                 phases_g12[g1] = ut.fold_time_series(ecl_mid[g1], 2 * period, zero=t_0)
                 phases_g12[g2] = ut.fold_time_series(ecl_mid[g2], 2 * period, zero=t_0 + period)
-                separate_p = test_separation(phases_g12, g1, g2, phase=True)
+                separate_p = test_separation(phases_g12, g1, g2)
             else:
                 separate_p = False
             separate_d = test_separation(depths, g1, g2)

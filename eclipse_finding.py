@@ -1245,6 +1245,11 @@ def estimate_period(ecl_mid, widths, depths, added_snr, flags_lrf, timestep):
     ecl_i = np.arange(n_ecl)
     m_full = (flags_lrf == 0)
     n_full_ecl = np.sum(m_full)
+    # define the time domain to make eclipse-series (in pattern_test and extract_pattern)
+    domain = np.array([np.min(ecl_mid), np.max(ecl_mid)])
+    time_padding = 0.05 * (domain[1] - domain[0]) / len(ecl_mid)
+    domain[0] -= time_padding
+    domain[1] += time_padding
     # first establish an estimate of the period
     if (n_ecl < 2):
         # no eclipses or a single eclipse... return None
@@ -1266,11 +1271,6 @@ def estimate_period(ecl_mid, widths, depths, added_snr, flags_lrf, timestep):
         depths = depths[ecl_sorter]
         added_snr = added_snr[ecl_sorter]
         m_full = m_full[ecl_sorter]
-        # define the time domain to search
-        domain = np.array([np.min(ecl_mid), np.max(ecl_mid)])
-        time_padding = 0.05 * (domain[1] - domain[0]) / len(ecl_mid)
-        domain[0] -= time_padding
-        domain[1] += time_padding
         # set the reference zero-point eclipse
         snr_ref = max(np.mean(added_snr), 0.5 * np.max(added_snr))
         ecl_i = np.arange(len(ecl_mid))

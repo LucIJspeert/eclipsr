@@ -9,7 +9,7 @@ The aim is to find eclipsing binaries among both pulsating and non-pulsating sta
 
 ### Reference Material
 
-* This algorithm has been documented, tested and applied in the publication: [paper](https://webpage.com/something/123456789/8044)
+* This algorithm has been documented, tested and applied in the publication: [An all-sky sample of intermediate- to high-mass OBA-type eclipsing binaries observed by TESS](https://ui.adsabs.harvard.edu/abs/2021A%26A...652A.120I/abstract)
 
 
 ## Getting started

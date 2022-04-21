@@ -96,6 +96,7 @@ def get_tess_sectors(times, bjd_ref=2457000.0):
     """Load the times of the TESS sectors from a file and return a set of
     indices indicating the separate sectors in the time series.
     Make sure to use the appropriate BJD reference date for your data.
+    Handy link: https://archive.stsci.edu/tess/tess_drn.html
     """
     # the 0.5 offset comes from test results, and the fact that no exact JD were found (just calendar days)
     script_dir = os.path.dirname(os.path.abspath(__file__))  # absolute dir the script is in

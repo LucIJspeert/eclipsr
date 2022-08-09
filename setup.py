@@ -1,11 +1,23 @@
+"""ECLIPSR
+"""
+
 from setuptools import setup, find_packages
 
+
+# package version
+MAJOR = 1
+MINOR = 0
+ATTR = '3'
+
 setup(name="eclipsr",
-    version='0.1',
-    author='Luc IJspeert',
-    license='GNU General Public License v3.0',
-    long_description=open('README.md').read(),
-    packages=find_packages(),
-    package_data={'': ['tess_sectors.dat']},
-    include_package_data=True,
-    install_requires=['numpy', 'scipy', 'numba', 'astropy', 'matplotlib', 'h5py'])
+      version=f'{MAJOR}.{MINOR}.{ATTR}',
+      author='Luc IJspeert',
+      license='GNU General Public License v3.0',
+      description='Eclipse Candidates in Light curves and Inference of Period at a Speedy Rate',
+      long_description=open('README.md').read(),
+      packages=['eclipsr'],
+      package_dir={'eclipsr': 'eclipsr'},
+      package_data={'eclipsr': ['eclipsr/data/tess_sectors.dat']},
+      include_package_data=True,
+      install_requires=['numpy', 'scipy', 'numba', 'matplotlib', 'h5py'],
+      extras_require={'fits functionality': ['astropy']})

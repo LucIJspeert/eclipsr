@@ -13,7 +13,11 @@ The aim is to find eclipsing binaries among both pulsating and non-pulsating sta
 
 
 ## Getting started
-As of version 1.0 (January 2021), the way to get this code is to either download it or make a fork on GitHub. It is recommended to download the latest release from the GitHub page. To use it, simply import the folder containing ECLIPSR into your own script.
+As of version 1.0.3 (August 2022), it is possible to install ECLIPSR with pip using:
+
+    >>> pip install git+https://github.com/LucIJspeert/eclipsr@v1.0.3
+
+Or install the master branch by leaving out the version number. One can then import the package from the python environment it was installed in. Of course one can always still manually download it or make a fork on GitHub. It is recommended to get the latest release from the GitHub page. To use it, simply import the folder containing ECLIPSR into your own script.
 
 **ECLIPSR has only been tested in Python 3.7**. 
 Using older versions could result in unexpected errors, although any Python version >3.6 is expected to work.

@@ -13,9 +13,9 @@ The aim is to find eclipsing binaries among both pulsating and non-pulsating sta
 
 
 ## Getting started
-As of version 1.0.3 (August 2022), it is possible to install ECLIPSR with pip using:
+The easiest way to install ECLIPSR is to use pip:
 
-    >>> pip install git+https://github.com/LucIJspeert/eclipsr@v1.0.3
+    >>> pip install git+https://github.com/LucIJspeert/eclipsr@v1.0.4
 
 Or install the master branch by leaving out the version number. One can then import the package from the python environment it was installed in. Of course one can always still manually download it or make a fork on GitHub. It is recommended to get the latest release from the GitHub page. To use it, simply import the folder containing ECLIPSR into your own script.
 

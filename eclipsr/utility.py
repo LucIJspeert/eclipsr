@@ -50,18 +50,27 @@ def runs_test(signal):
 
 
 @nb.njit(cache=True)
-def normalise_counts(flux_counts, i_sectors=None):
+def normalise_counts(flux_counts, flux_counts_err=None, i_sectors=None):
     """Median-normalises flux (counts or otherwise, should be positive) by
     dividing by the median (result varies around one and is still positive).
     The result is positive and varies around one.
     If i_sectors is given, the signal is processed per sector.
     """
     if i_sectors is None:
-        flux_counts = flux_counts / np.median(flux_counts)
+        median = np.median(flux_counts)
+        flux_norm = flux_counts / median
+        if flux_counts_err is not None:
+            flux_err_norm = flux_counts_err / median
     else:
-        for s in i_sectors:
-            flux_counts[s[0]:s[1]] = flux_counts[s[0]:s[1]] / np.median(flux_counts[s[0]:s[1]])
-    return flux_counts
+        median = np.zeros(len(i_sectors))
+        flux_norm = np.zeros(len(flux_counts))
+        flux_err_norm = np.zeros(len(flux_counts))
+        for i, s in enumerate(i_sectors):
+            median[i] = np.median(flux_counts[s[0]:s[1]])
+            flux_norm[s[0]:s[1]] = flux_counts[s[0]:s[1]] / median[i]
+            if flux_counts_err is not None:
+                flux_err_norm[s[0]:s[1]] = flux_counts_err[s[0]:s[1]] / median[i]
+    return flux_norm, flux_err_norm
 
 
 @nb.njit(cache=True)
@@ -206,7 +215,7 @@ def check_constant(signal):
     return (low < low_diff)
 
 
-def ingest_signal(times, signal, tess_sectors=True, quality=None):
+def ingest_signal(times, signal, signal_err=None, tess_sectors=True, quality=None):
     """Take a signal and process it for ingest into the algorithm.
     
     The signal (raw counts or ppm) will be median normalised
@@ -231,9 +240,11 @@ def ingest_signal(times, signal, tess_sectors=True, quality=None):
     sorter = np.argsort(times)
     times = times[sorter]
     signal = signal[sorter]
+    signal_err = signal_err[sorter]
     finites = np.isfinite(signal)
     times = times[finites].astype(np.float_)
     signal = signal[finites].astype(np.float_)
+    signal_err = signal_err[finites].astype(np.float_)
     
     if (len(times) < 10):
         warnings.warn('given signal does not contain enough finite values.')
@@ -243,25 +254,28 @@ def ingest_signal(times, signal, tess_sectors=True, quality=None):
         if (len(i_sectors) == 0):
             warnings.warn('given times do not fall into any TESS sectors. '
                           'Set tess_sectors=False or change the reference BJD.')
-            signal = normalise_counts(signal)
+            signal = normalise_counts(signal, flux_counts_err=signal_err)
             outlier_mask = remove_outliers(signal)
             times = times[outlier_mask]
             signal = signal[outlier_mask]
+            signal_err = signal_err[outlier_mask]
         else:
             # rescale the different TESS sectors for more consistent amplitude and better operation
             signal, thr_mask = rescale_tess(times, signal, i_sectors)
             # remove any other upward outliers
             times = times[thr_mask]
             signal = signal[thr_mask]
+            signal_err = signal_err[thr_mask]
             # normalise
-            signal = normalise_counts(signal, i_sectors=i_sectors)
+            signal = normalise_counts(signal, flux_counts_err=signal_err, i_sectors=i_sectors)
             outlier_mask = remove_outliers(signal)
             times = times[outlier_mask]
             signal = signal[outlier_mask]
+            signal_err = signal_err[outlier_mask]
 
     else:
-        signal = normalise_counts(signal)
-    return times, signal
+        signal = normalise_counts(signal, flux_counts_err=signal_err)
+    return times, signal, signal_err
 
 
 def save_results(results, file_name, identifier='none'):

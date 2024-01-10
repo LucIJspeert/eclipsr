@@ -248,7 +248,7 @@ def ingest_signal(times, signal, signal_err=None, tess_sectors=True, quality=Non
     
     if (len(times) < 10):
         warnings.warn('given signal does not contain enough finite values.')
-        return np.zeros(0), np.zeros(0)
+        return np.zeros(0), np.zeros(0), np.zeros(0)
     if tess_sectors:
         i_sectors = get_tess_sectors(times)
         if (len(i_sectors) == 0):

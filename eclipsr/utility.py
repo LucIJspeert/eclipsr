@@ -241,7 +241,7 @@ def ingest_signal(times, signal, signal_err=None, tess_sectors=True, quality=Non
     times = times[sorter]
     signal = signal[sorter]
     signal_err = signal_err[sorter]
-    finites = np.isfinite(signal)
+    finites = np.isfinite(signal) & np.isfinite(signal_err)
     times = times[finites].astype(np.float_)
     signal = signal[finites].astype(np.float_)
     signal_err = signal_err[finites].astype(np.float_)
@@ -254,7 +254,7 @@ def ingest_signal(times, signal, signal_err=None, tess_sectors=True, quality=Non
         if (len(i_sectors) == 0):
             warnings.warn('given times do not fall into any TESS sectors. '
                           'Set tess_sectors=False or change the reference BJD.')
-            signal = normalise_counts(signal, flux_counts_err=signal_err)
+            signal, signal_err = normalise_counts(signal, flux_counts_err=signal_err)
             outlier_mask = remove_outliers(signal)
             times = times[outlier_mask]
             signal = signal[outlier_mask]
@@ -267,14 +267,14 @@ def ingest_signal(times, signal, signal_err=None, tess_sectors=True, quality=Non
             signal = signal[thr_mask]
             signal_err = signal_err[thr_mask]
             # normalise
-            signal = normalise_counts(signal, flux_counts_err=signal_err, i_sectors=i_sectors)
+            signal, signal_err = normalise_counts(signal, flux_counts_err=signal_err, i_sectors=i_sectors)
             outlier_mask = remove_outliers(signal)
             times = times[outlier_mask]
             signal = signal[outlier_mask]
             signal_err = signal_err[outlier_mask]
 
     else:
-        signal = normalise_counts(signal, flux_counts_err=signal_err)
+        signal, signal_err = normalise_counts(signal, flux_counts_err=signal_err)
     return times, signal, signal_err
 
 

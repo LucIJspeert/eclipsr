@@ -237,7 +237,7 @@ def ingest_signal(times, signal, signal_err=None, tess_sectors=True, quality=Non
     if quality is not None:
         times = times[quality]
         signal = signal[quality]
-        signal_err = signal[quality]
+        signal_err = signal_err[quality]
     sorter = np.argsort(times)
     times = times[sorter]
     signal = signal[sorter]

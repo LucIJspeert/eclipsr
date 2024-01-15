@@ -1980,7 +1980,7 @@ def find_eclipses(times, signal, mode=1, max_n=80, tess_sectors=False, rf_classi
             attrs = eclipse_score_attr(times, signal_s, r_derivs[0], period, ecl_indices, ecl_mid,
                                        added_snr, widths, depths, flags_lrf, flags_pst)
             score, attr_0, attr_1, attr_2, attr_3, attr_4, penalty = attrs
-            rfc = joblib.load('eclipsr/data/random_forrest.dump')
+            rfc = joblib.load('data/random_forrest.dump')
             score = rfc.predict(np.array(attrs[1:][np.newaxis]))
         else:
             # legacy mode with the manually designed eclipse score

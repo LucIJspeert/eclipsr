@@ -1,6 +1,7 @@
 numpy
 scipy
 numba
+scikit-learn
 astropy
 matplotlib
 h5py

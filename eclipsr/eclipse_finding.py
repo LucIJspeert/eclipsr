@@ -28,8 +28,10 @@ description of this function for details on the modes of operation).
 Code written by: Luc IJspeert
 """
 
+import os
 import numpy as np
 import scipy as sp
+import joblib
 import scipy.signal
 import numba as nb
 
@@ -1696,7 +1698,7 @@ def normalised_equality(added_snr, depths, widths, flags_pst):
 def eclipse_score(times, signal_s, deriv_1r, period, ecl_indices, ecl_mid, added_snr, widths, depths,
                   flags_lrf, flags_pst):
     """Determine a number that expresses the score that we have found actual eclipses.
-    Below 0.38 is probably a false positive, above 0.38 is quite probably and EB.
+    Below 0.36 is probably a false positive, above 0.36 is quite probably and EB.
     """
     if (len(ecl_mid) != 0):
         primaries = (flags_pst == 1)
@@ -1756,7 +1758,8 @@ def eclipse_score(times, signal_s, deriv_1r, period, ecl_indices, ecl_mid, added
 def eclipse_score_attr(times, signal_s, deriv_1r, period, ecl_indices, ecl_mid, added_snr, widths, depths,
                        flags_lrf, flags_pst):
     """Determine a number that expresses the score that we have found actual eclipses.
-    Below 0.38 is probably a false positive, above 0.38 is quite probably and EB.
+    Below 0.36 is probably a false positive, above 0.36 is quite probably and EB.
+    Also returns the attributes that go into calculating the score.
     """
     if (len(ecl_mid) != 0):
         primaries = (flags_pst == 1)
@@ -1856,21 +1859,65 @@ def interpret_flags(flags_lrf, flags_pst):
     return flags_lrf_str, flags_pst_str
 
 
-def find_eclipses(times, signal, mode=1, max_n=80, tess_sectors=False):
+def find_eclipses(times, signal, mode=1, max_n=80, tess_sectors=False, rf_classifier=True):
     """Find the eclipses, ephemeris and the statistics about the eclipses.
+    
+    Parameters
+    ----------
+    times: numpy.ndarray[float]
+        Timestamps of the time series
+    signal: numpy.ndarray[float]
+        Measurement values of the time series
+    mode: int
+        Mode of operation: 0, 1, 2 or -1
+        See notes for explanation of the modes.
+    max_n: int
+        Maximum smoothing kernel width in data points
+    tess_sectors: bool
+        Whether to use TESS sectors to divide up the time series
+        or to see it as one continuous piece.
+    rf_classifier: bool
+        Whether to use the random forrest classifier for the score
+        (0='not EB', 1='EB') by IJspeert et al. (2024), or to use
+        the original eclipse score by IJspeert et al. (2021).
+    
+    Returns
+    -------
+    Any of three possible sets of variables depending on the mode,
+    the most complete one being:
+    t_0: float
+    period: float
+    score: float
+    sine_like: bool
+    wide: bool
+    n_kernel: int
+    width_stats: numpy.ndarray[float]
+    depth_stats: numpy.ndarray[float]
+    ecl_mid: numpy.ndarray[float]
+    widths: numpy.ndarray[float]
+    depths: numpy.ndarray[float]
+    ratios: numpy.ndarray[float]
+    added_snr: numpy.ndarray[float]
+    ecl_indices: numpy.ndarray[int]
+    flags_lrf: numpy.ndarray[int]
+    flags_pst: numpy.ndarray[int]
+    
+    Notes
+    -----
+    It is recommended to run ingest_signal() before running find_eclipses
+    to avoid unwanted results or errors.
+    If multiple TESS sectors are used, setting tess_sectors=True will make
+    sure certain parts of the analysis are done on a per-sector basis. This
+    usually improves results.
+    
     There are several modes of operation:
     0: Only find and return the individual eclipses without looking for a period
-    1: Only find and return the ephemeris (t_0, period), eclipse score and collective statistics
-        about the eclipse widths and depths (mean and standard deviation)
+    1: Only find and return the ephemeris (t_0, period), eclipse score and collective
+        statistics about the eclipse widths and depths (mean and standard deviation)
     2: Find and return the t_0, period, eclipse score and individual eclipse
         midpoints, widths, depths, bottom ratios, added_snr, the eclipse indices,
-         plus the l/r/f and p/s/t flags_lrf (=everything)
+        plus the l/r/f and p/s/t flags_lrf (=everything)
     -1: Turn on diagnostic plots and return everything
-    
-    [notes] it is recommended to run ingest_signal() before running find_eclipses
-    to avoid unwanted results or errors.
-    If multiple TESS sectors are used, setting tess_sectors=True will make sure certain
-    parts of the analysis are done on a per-sector basis. This usually improves results.
     """
     # get the sector indices, or otherwise the signal is processed as one whole
     if tess_sectors:
@@ -1929,8 +1976,17 @@ def find_eclipses(times, signal, mode=1, max_n=80, tess_sectors=False):
             pt.plot_period_diagnostics(times, signal, signal_s, ecl_indices, ecl_mid, widths, depths,
                                        flags_lrf, flags_pst, period)
         # determine the eclipse score
-        score = eclipse_score(times, signal_s, r_derivs[0], period, ecl_indices, ecl_mid,
-                             added_snr, widths, depths, flags_lrf, flags_pst)
+        if rf_classifier:
+            attrs = eclipse_score_attr(times, signal_s, r_derivs[0], period, ecl_indices, ecl_mid,
+                                       added_snr, widths, depths, flags_lrf, flags_pst)
+            score, attr_0, attr_1, attr_2, attr_3, attr_4, penalty = attrs
+            rfc = joblib.load('eclipsr/data/random_forrest.dump')
+            score = rfc.predict(np.array(attrs[1:][np.newaxis]))
+        else:
+            # legacy mode with the manually designed eclipse score
+            score = eclipse_score(times, signal_s, r_derivs[0], period, ecl_indices, ecl_mid,
+                                  added_snr, widths, depths, flags_lrf, flags_pst)
+        
     elif (len(flags_lrf) != 0):
         # take some measurements
         ecl_mid, widths, depths, ratios = measure_eclipses(times, signal_s, ecl_indices, flags_lrf)

@@ -19,5 +19,5 @@ setup(name="eclipsr",
       package_dir={'eclipsr': 'eclipsr'},
       package_data={'eclipsr': ['eclipsr/data/tess_sectors.dat']},
       include_package_data=True,
-      install_requires=['numpy', 'scipy', 'numba', 'matplotlib', 'h5py'],
+      install_requires=['numpy', 'scipy', 'numba', 'scikit-learn', 'matplotlib', 'h5py'],
       extras_require={'fits functionality': ['astropy']})

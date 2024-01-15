@@ -234,6 +234,8 @@ def ingest_signal(times, signal, signal_err=None, tess_sectors=True, quality=Non
     
     Outputs the processed times and signal.
     """
+    if signal_err is None:
+        signal_err = np.ones(len(times))
     if quality is not None:
         times = times[quality]
         signal = signal[quality]

@@ -29,7 +29,20 @@ empty_result = (-1, -1, -1, False, False, 1, np.array([[-1., -1.], [-1., -1.]]),
 
 def get_fits_data(file_name, index=0):
     """Returns the data from a fits file.
-    Optional arg: HDUlist index.
+
+    Parameters
+    ----------
+    file_name: str
+        Path to a file containing the light curve data, with
+        timestamps, normalised flux, error values as the
+        first three columns, respectively.
+    index: int
+        HDUlist index to grab
+
+    Returns
+    -------
+    data: numpy.ndarray[float]
+        The data portion of the fits file
     """
     if ((file_name[-5:] != '.fits') & (file_name[-4:] != '.fit')):
         file_name += '.fits'
@@ -40,6 +53,22 @@ def get_fits_data(file_name, index=0):
 
 
 def ephem_from_file(file_name, delimiter=None):
+    """Find the ephemeris for the target light curve
+
+    Parameters
+    ----------
+    file_name: str
+        Path to a file containing the light curve data, with
+        timestamps, normalised flux, error values as the
+        first three columns, respectively.
+    delimiter: None, str
+        Column separator for the light curve file
+
+    Returns
+    -------
+    result: tuple
+        Output of the function find_eclipses (mode=1)
+    """
     times, signal = np.loadtxt(file_name, delimiter=delimiter, unpack=True)
     times, signal = ut.ingest_signal(times, signal + 1, tess_sectors=False)
     try:
@@ -50,7 +79,26 @@ def ephem_from_file(file_name, delimiter=None):
     return result
 
 
-def from_file(file_name, delimiter=None, save_dir=None):
+def analyse_lc_from_file(file_name, delimiter=None, save_dir=None):
+    """Do all steps of the algorithm for a given light curve file
+
+    Parameters
+    ----------
+    file_name: str
+        Path to a file containing the light curve data, with
+        timestamps, normalised flux, error values as the
+        first three columns, respectively.
+    delimiter: None, str
+        Column separator for the light curve file
+    save_dir: str
+        Path to a directory for saving the results. Also used to load
+        previous analysis results.
+
+    Returns
+    -------
+    result: tuple
+        Output of the function find_eclipses (mode=2)
+    """
     times, signal = np.loadtxt(file_name, delimiter=delimiter, unpack=True)
     times, signal = ut.ingest_signal(times, signal + 1, tess_sectors=False)
     
@@ -67,7 +115,26 @@ def from_file(file_name, delimiter=None, save_dir=None):
     return result
 
 
-def from_tic(tic, all_files=None, save_dir=None):
+def analyse_lc_from_tic(tic, all_files=None, save_dir=None):
+    """Do all steps of the algorithm for a given TIC number
+
+    Parameters
+    ----------
+    tic: int
+        The TESS Input Catalog (TIC) number for loading/saving the data
+        and later reference.
+    all_files: list[str]
+        List of all the TESS data product '.fits' files. The files
+        with the corresponding TIC number are selected.
+    save_dir: str
+        Path to a directory for saving the results. Also used to load
+        previous analysis results.
+
+    Returns
+    -------
+    result: tuple
+        Output of the function find_eclipses (mode=2)
+    """
     tic_files = [file for file in all_files if f'{tic:016.0f}' in file]
     times = np.array([])
     signal = np.array([])
@@ -102,12 +169,27 @@ def from_tic(tic, all_files=None, save_dir=None):
     return result
 
 
-def analyse_set(target_list, function='ephem_from_file', n_threads=os.cpu_count()-2, **kwargs):
-    """Give a set of file names or target identifiers depending on the function used.
-    The eclipsr program will be run in parallel on the set.
-    
-    functions that can be used:
-    [ephem_from_file, from_file, from_tic]
+def analyse_set(target_list, function='analyse_lc_from_tic', n_threads=os.cpu_count()-2, **kwargs):
+    """Analyse a set of light curves in parallel
+
+    Parameters
+    ----------
+    target_list: list[str], list[int]
+        List of either file names or TIC identifiers to analyse
+    function: str
+        Name  of the function to use for the analysis
+        Choose from [ephem_from_file, analyse_lc_from_file, analyse_lc_from_tic]
+    n_threads: int
+        Number of threads to use.
+        Uses two fewer than the available amount by default.
+    **kwargs: dict
+        Extra arguments to 'function': refer to each function's
+        documentation for a list of all possible arguments.
+
+    Returns
+    -------
+    results: list
+        Output of the function for all targets
     """
     t1 = time.time()
     with mp.Pool(processes=n_threads) as pool:

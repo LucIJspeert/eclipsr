@@ -79,7 +79,7 @@ def ephem_from_file(file_name, delimiter=None):
     return result
 
 
-def analyse_lc_from_file(file_name, delimiter=None, save_dir=None):
+def analyse_lc_from_file(file_name, delimiter=None, tess_sectors=False, save_dir=None):
     """Do all steps of the algorithm for a given light curve file
 
     Parameters
@@ -90,6 +90,9 @@ def analyse_lc_from_file(file_name, delimiter=None, save_dir=None):
         first three columns, respectively.
     delimiter: None, str
         Column separator for the light curve file
+    tess_sectors: bool
+        Whether to use TESS sectors to divide up the time series
+        or to see it as one continuous piece.
     save_dir: str
         Path to a directory for saving the results. Also used to load
         previous analysis results.
@@ -105,7 +108,7 @@ def analyse_lc_from_file(file_name, delimiter=None, save_dir=None):
     source_id = os.path.basename(file_name)
     
     try:
-        result = ecf.find_eclipses(times, signal, mode=2, max_n=80, tess_sectors=False)
+        result = ecf.find_eclipses(times, signal, mode=2, max_n=80, tess_sectors=tess_sectors)
     except:
         print(f'an error happened in the following file: {file_name}')
         result = empty_result
@@ -115,7 +118,7 @@ def analyse_lc_from_file(file_name, delimiter=None, save_dir=None):
     return result
 
 
-def analyse_lc_from_tic(tic, all_files=None, save_dir=None):
+def analyse_lc_from_tic(tic, all_tic=None, all_files=None, save_dir=None):
     """Do all steps of the algorithm for a given TIC number
 
     Parameters
@@ -123,7 +126,9 @@ def analyse_lc_from_tic(tic, all_files=None, save_dir=None):
     tic: int
         The TESS Input Catalog (TIC) number for loading/saving the data
         and later reference.
-    all_files: list[str]
+    all_tic: numpy.ndarray[int]
+        List of all the TESS TIC numbers corresponding to all_files
+    all_files: numpy.ndarray[str]
         List of all the TESS data product '.fits' files. The files
         with the corresponding TIC number are selected.
     save_dir: str
@@ -135,7 +140,7 @@ def analyse_lc_from_tic(tic, all_files=None, save_dir=None):
     result: tuple
         Output of the function find_eclipses (mode=2)
     """
-    tic_files = [file for file in all_files if f'{tic:016.0f}' in file]
+    tic_files = all_files[all_tic == tic]
     times = np.array([])
     signal = np.array([])
     qual_flags = np.array([])

@@ -41,9 +41,26 @@ from . import plot_tools as pt
 
 @nb.njit(cache=True)
 def cut_eclipses(times, eclipses):
-    """Returns a boolean mask covering up the eclipses.
-    Give the eclipse times as a series of two points in time.
-    See also: mask_eclipses
+    """Cover up the eclipses with a mask
+
+    Parameters
+    ----------
+    times: numpy.ndarray[float]
+        Timestamps of the time series
+    eclipses: list[float], numpy.ndarray[float]
+        Pairs of eclipse start and end times
+
+    Returns
+    -------
+    mask: numpy.ndarray[bool]
+        Boolean mask marking the eclipses in times
+
+    See Also
+    --------
+    mask_eclipses
+
+    Notes
+    -----
     mask_eclipses is a lot faster.
     Can of course be used to cover up any set of pairs of time points.
     """
@@ -55,9 +72,27 @@ def cut_eclipses(times, eclipses):
 
 @nb.njit(cache=True)
 def mask_eclipses(times, eclipses):
-    """Returns a boolean mask covering up the eclipses.
-    Give the eclipse indices as a series of two indices per eclipse.
-    See also: cut_eclipses
+    """Cover up the eclipses with a mask
+
+    Parameters
+    ----------
+    times: numpy.ndarray[float]
+        Timestamps of the time series
+    eclipses: list[int], numpy.ndarray[int]
+        Pairs of eclipse start and end indices
+
+    Returns
+    -------
+    mask: numpy.ndarray[bool]
+        Boolean array masking the eclipses in times
+
+    See Also
+    --------
+    cut_eclipses
+
+    Notes
+    -----
+    mask_eclipses is a lot faster.
     Can of course be used to cover up any set of pairs of indices.
     """
     mask = np.ones(len(times), dtype=np.bool_)
@@ -67,12 +102,23 @@ def mask_eclipses(times, eclipses):
 
 
 @nb.njit(cache=True)
-def mark_gaps(a):
+def mark_gaps(times):
     """Mark the two points at either side of gaps in a somewhat-uniformly separated
     series of monotonically ascending numbers (e.g. timestamps).
-    Returns a boolean array and the gap widths in units of the smallest step size.
+
+    Parameters
+    ----------
+    times: numpy.ndarray[float]
+        Timestamps of the time series
+
+    Returns
+    -------
+    gaps: numpy.ndarray[bool]
+        Boolean array masking the gaps in times
+    gap_width: numpy.ndarray[int]
+        Gap widths in units of the smallest step size
     """
-    diff = a[1:] - a[:-1]  # np.diff(a)
+    diff = times[1:] - times[:-1]  # np.diff(a)
     min_d = np.min(diff)
     gap_width = diff / min_d
     gaps = (gap_width > 4)  # gaps that are at least 4 times the minimum time step
@@ -86,38 +132,56 @@ def mark_gaps(a):
 
 
 @nb.njit(cache=True)
-def repeat_points_internals(t, n, no_gaps=False):
+def repeat_points_internals(times, n_kernel, no_gaps=False):
     """Makes an array of the number of repetitions to be made in an array before diff
     or convolve is used on it, to take into account gaps in the data.
     It also provides a mask that can remove exactly all the duplicate points afterward.
+
+    Parameters
+    ----------
+    times: numpy.ndarray[float]
+        Timestamps of the time series
+    n_kernel: int
+        Averaging kernel width
+    no_gaps: bool
+        Set to True to turn off correcting for gaps. This is meant for
+        more unevenly spaced data that does not have large gaps and
+        will only repeat the start and end of the array.
+
+    Returns
+    -------
+    repetitions: numpy.ndarray[int]
+        Number of repetitions per time point
+    repetition_mask: numpy.ndarray[bool]
+        Boolean array for masking only the repeated points
+
+    Notes
+    -----
     To be used in conjunction with numpy.repeat().
     Make sure the time-points are somewhat consistently spaced.
-    
-    no_gaps can be set to True to turn off correcting for gaps. This is meant for
-    more unevenly spaced data that does not have large gaps and will only repeat
-    the start and end of the array.
-    
-    example:
-    n_repeats, rep_mask = repeat_points_internals(times, n)
-    repeated_signal = np.repeat(signal, n_repeats)
-    original_signal = repeated_signal[rep_mask]
-    np.all(signal == original_signal)
+
+    Examples
+    --------
+    >>> n_repeats, rep_mask = repeat_points_internals(times, n)
+    >>> repeated_signal = np.repeat(signal, n_repeats)
+    >>> original_signal = repeated_signal[rep_mask]
+    >>> np.all(signal == original_signal)
     """
-    if (n < 2):
+    if (n_kernel < 2):
         # no repetitions made
-        repetitions = np.ones(len(t), dtype=np.int_)
-        repetition_mask = np.ones(len(t), dtype=np.bool_)
+        repetitions = np.ones(len(times), dtype=np.int_)
+        repetition_mask = np.ones(len(times), dtype=np.bool_)
     elif no_gaps:
         # only repeat the start and end n times
-        repetitions = np.ones(len(t), dtype=np.int_)
-        repetitions[0] += (n - 1)
-        repetitions[-1] += (n - 1)
-        repetition_mask = np.ones(len(t), dtype=np.bool_)
-        repeat_ends = np.zeros(n - 1, dtype=np.bool_)
+        repetitions = np.ones(len(times), dtype=np.int_)
+        repetitions[0] += (n_kernel - 1)
+        repetitions[-1] += (n_kernel - 1)
+        repetition_mask = np.ones(len(times), dtype=np.bool_)
+        repeat_ends = np.zeros(n_kernel - 1, dtype=np.bool_)
         repetition_mask = np.concatenate((repeat_ends, repetition_mask, repeat_ends))
     else:
         # get the gap positions and start- and endpoints
-        gaps, widths = mark_gaps(t)
+        gaps, widths = mark_gaps(times)
         gap_start = (widths != 1)  # the gap points at the start of a gap
         gap_p1 = np.copy(gaps)
         gap_p1[gaps] = np.invert(gap_start)
@@ -128,10 +192,10 @@ def repeat_points_internals(t, n, no_gaps=False):
         widths = np.ceil(widths / 2).astype(np.int_)
         max_repeats = np.copy(widths)
         max_repeats[1:] += max_repeats[:-1]
-        widths = np.where(widths < n, widths, n)
-        max_repeats = np.where(max_repeats < n, max_repeats, n)
+        widths = np.where(widths < n_kernel, widths, n_kernel)
+        max_repeats = np.where(max_repeats < n_kernel, max_repeats, n_kernel)
         # the number of repetitions is at least 1 and max n
-        repetitions = np.ones(len(t), dtype=np.int_)
+        repetitions = np.ones(len(times), dtype=np.int_)
         repetitions[gaps] = max_repeats
         # start the repetition mask by repeating the (inverted) gap mask
         repetition_mask = np.repeat(np.invert(gaps), repetitions)
@@ -143,16 +207,33 @@ def repeat_points_internals(t, n, no_gaps=False):
         # remove the points that where originally part of 'a' from the repetition_mask:
         repetition_mask |= gap_edges
         # finally, repeat the start and end of the array as well
-        repetitions[0] += (n - 1)
-        repetitions[-1] += (n - 1)
-        repeat_ends = np.zeros(n - 1, dtype=np.bool_)
+        repetitions[0] += (n_kernel - 1)
+        repetitions[-1] += (n_kernel - 1)
+        repeat_ends = np.zeros(n_kernel - 1, dtype=np.bool_)
         repetition_mask = np.concatenate((repeat_ends, repetition_mask, repeat_ends))
     return repetitions, repetition_mask
 
 
 @nb.njit(cache=True)
-def smooth(a, n, mask=None):
+def smooth(a, n_kernel, mask=None):
     """Similar in function to numpy.convolve, but always uses a flat kernel (average).
+
+    Parameters
+    ----------
+    a: numpy.ndarray[float]
+        Measurement values of a time series
+    n_kernel: int
+        Averaging kernel width
+    mask: None, numpy.ndarray[bool]
+        Mask applied to times at the end
+
+    Returns
+    -------
+    a_smooth: numpy.ndarray[float]
+        Smoothed measurement values of a time series
+
+    Notes
+    -----
     Can also apply a mask to the output arrays, in case they had repeats in them.
     """
     # kernel = np.full(n, 1 / n)
@@ -162,37 +243,59 @@ def smooth(a, n, mask=None):
     # a_smooth = a_smooth[left:-(reduce - left)]
     # below method jitted is about as fast as the above unjitted, but at least it is then jitted
     # since the np.convolve is only slowed down by jitting!
-    n_2 = n // 2
-    n_3 = n % 2
+    n_2 = n_kernel // 2
+    n_3 = n_kernel % 2
     sum = 0
     a_smooth = np.zeros(len(a))
-    for i in range(0, n):
+    for i in range(0, n_kernel):
         sum = sum + a[i]
         a_smooth[i] = sum / (i + 1)
-    for i in range(n, len(a)):
-        sum = sum - a[i - n] + a[i]
-        a_smooth[i] = sum / n
+    for i in range(n_kernel, len(a)):
+        sum = sum - a[i - n_kernel] + a[i]
+        a_smooth[i] = sum/n_kernel
     # slide the result backward by half n, and calculate the last few points
     if (n_2 > 1) | (n_3 > 0):
         a_smooth[:-n_2 - n_3 + 1] = a_smooth[n_2 + n_3 - 1:]
     for i in range(-n_2 - n_3 + 1, 0):
         sum = sum - a[i - n_2 - 1]
         a_smooth[i] = sum / (-i + n_2)
-    
+
     if mask is not None:
         a_smooth = a_smooth[mask]
     return a_smooth
 
 
 @nb.njit(cache=True)
-def smooth_diff(a, n, mask=None):
+def smooth_diff(a, n_kernel, mask=None):
     """Similar in function to numpy.diff, but also first smooths the input array
-    by averaging over n consecutive points.
-    Can also apply a mask to the output arrays, in case they had repeats in them.
+    by averaging over n_kernel consecutive points.
+
+    Parameters
+    ----------
+    a: numpy.ndarray[float]
+        Measurement values of a time series
+    n_kernel: int
+        Averaging kernel width
+    mask: None, numpy.ndarray[bool]
+        Mask applied to times at the end
+
+    Returns
+    -------
+    diff: numpy.ndarray[float]
+        Differenced measurements of a time series
+    a_smooth: numpy.ndarray[float]
+        Smoothed measurement values of a time series
+
+    Notes
+    -----
     Also returns the smoothed a.
-    See also: smooth, smooth_derivative
+    Can also apply a mask to the output arrays, in case they had repeats in them.
+
+    See Also
+    --------
+    smooth, smooth_derivative
     """
-    a_smooth = smooth(a, n, mask=None)
+    a_smooth = smooth(a, n_kernel, mask=None)
     diff = a_smooth[1:] - a_smooth[:-1]  # np.diff(a_smooth)
     if mask is not None:
         diff = diff[mask[:-1]]
@@ -201,15 +304,39 @@ def smooth_diff(a, n, mask=None):
 
 
 @nb.njit(cache=True)
-def smooth_derivative(a, dt, n, mask=None):
+def smooth_derivative(a, dt, n_kernel, mask=None):
     """Similar in function to numpy.diff, but also first smooths the input array
     by averaging over n consecutive points and divides by the time-diff, so it
     becomes an actual derivative.
-    Can also apply a mask to the output arrays, in case they had repeats in them.
+
+    Parameters
+    ----------
+    a: numpy.ndarray[float]
+        Measurement values of a time series
+    dt: numpy.ndarray[float]
+        Time differences of the time series
+    n_kernel: int
+        Averaging kernel width
+    mask: None, numpy.ndarray[bool]
+        Mask applied to times at the end
+
+    Returns
+    -------
+    d_dt: numpy.ndarray[float]
+        Derivative of the measurements of a time series
+    a_smooth: numpy.ndarray[float]
+        Smoothed measurement values of a time series
+
+    Notes
+    -----
     Also returns the smoothed a.
-    See also: smooth, smooth_diff
+    Can also apply a mask to the output arrays, in case they had repeats in them.
+
+    See Also
+    --------
+    smooth, smooth_diff
     """
-    diff, a_smooth = smooth_diff(a, n, mask=mask)
+    diff, a_smooth = smooth_diff(a, n_kernel, mask=mask)
     d_dt = diff / dt
     return d_dt, a_smooth
 
@@ -217,12 +344,35 @@ def smooth_derivative(a, dt, n, mask=None):
 @nb.njit(cache=True)
 def prepare_derivatives(times, signal, n_kernel, no_gaps=False):
     """Calculate various derivatives of the light curve for the purpose of eclipse finding.
+
+    Parameters
+    ----------
+    times: numpy.ndarray[float]
+        Timestamps of the time series
+    signal: numpy.ndarray[float]
+        Measurement values of the time series
+    n_kernel: int
+        Averaging kernel width. n_kernel = 1 means no smoothing happens.
+    no_gaps: bool
+        Set to True to turn off correcting for gaps. This is meant for
+        more unevenly spaced data that does not have large gaps and
+        will only repeat the start and end of the array.
+
+    Returns
+    -------
+    signal_s: numpy.ndarray[float]
+        Smoothed measurement values of a time series
+    r_derivs: numpy.ndarray[float]
+        Raw derivatives of the time series
+    s_derivs: numpy.ndarray[float]
+        Smoothed derivatives of the time series
+
+    Notes
+    -----
     Returns all the raw and smooth arrays in vertically stacked groups
     (signal_s, r_derivs, s_derivs)
     Each curve is first smoothed before taking the derivative.
     [s=smoothed, r=raw]
-    n_kernel = 1 means no smoothing happens.
-    no_gaps can be set to True to turn off correcting for gaps.
     """
     diff_t = np.diff(np.append(times, 2 * times[-1] - times[-2]))
     if (n_kernel == 1):
@@ -257,6 +407,26 @@ def prepare_derivatives(times, signal, n_kernel, no_gaps=False):
 def find_best_n(times, signal, min_n=1, max_n=80):
     """Serves to find the best number of points for smoothing the signal
     in the further analysis (n_kernel).
+
+    Parameters
+    ----------
+    times: numpy.ndarray[float]
+        Timestamps of the time series
+    signal: numpy.ndarray[float]
+        Measurement values of the time series
+    min_n: int
+        Minimum averaging kernel width to consider
+    max_n: int
+        Maximum averaging kernel width to consider
+
+    Returns
+    -------
+    best_n: int
+        Best averaging kernel width for the time series
+
+    Notes
+    -----
+    May not in fact always find the best n_kernel.
     """
     n_range = np.arange(min_n, max_n + max_n % 2)
     # initialise some arrays
@@ -343,22 +513,45 @@ def find_best_n(times, signal, min_n=1, max_n=80):
 @nb.njit(cache=True)
 def curve_walker(signal, peaks, slope_sign, no_gaps, mode='up', look_ahead=1):
     """Walk up or down a slope to approach zero or to reach an extremum.
-    'peaks' are the starting points, 'signal' is the slope to walk
-    mode = 'up': walk in the slope sign direction to reach a maximum (minus is left)
-    mode = 'down': walk against the slope sign direction to reach a minimum (minus is right)
-    mode = 'up_to_zero'/'down_to_zero': same as above, but approaching zero
-        as closely as possible without changing direction.
-    The look_ahead parameter is the number of points that are checked ahead.
+
+    Parameters
+    ----------
+    signal: numpy.ndarray[float]
+        Measurement values of the time series
+        Curve to be walked along
+    peaks: numpy.ndarray[int]
+        Indices of the positions of peaks in the derivatives
+        Serve as the starting points
+    slope_sign: numpy.ndarray[int], numpy.ndarray[float]
+        Sign of the slope at the peak locations
+        Must be ones and minus ones
+    no_gaps: numpy.ndarray[bool]
+        Boolean array masking the non-gaps in signal
+    mode: str
+        How to walk along the curve. Choose from:
+        mode='up': walk in the slope sign direction to reach a maximum
+            (minus is left)
+        mode='down': walk against the slope sign direction to reach a minimum
+            (minus is right)
+        mode='up_to_zero'/'down_to_zero': same as above, but approaching zero
+            as closely as possible without changing direction.
+    look_ahead: int
+        The look_ahead parameter is the number of points that are checked ahead.
         This enables avoiding local minima, but can also jump too far.
         Depends on the cadence of the data.
+
+    Returns
+    -------
+    cur_i: numpy.ndarray[int]
+        Indices of the end positions after walking
     """
     if 'down' in mode:
         slope_sign = -slope_sign
     max_i = len(signal) - 1
-    
+
     def check_edges(indices):
         return (indices > 0) & (indices < max_i)
-    
+
     def check_condition(prev_s, cur_s):
         if 'up' in mode:
             condition = (prev_s < cur_s)
@@ -369,7 +562,7 @@ def curve_walker(signal, peaks, slope_sign, no_gaps, mode='up', look_ahead=1):
         if 'zero' in mode:
             condition &= np.abs(prev_s) > np.abs(cur_s)
         return condition
-    
+
     # start at the peaks
     prev_i = peaks
     prev_s = signal[prev_i]
@@ -416,6 +609,20 @@ def curve_walker(signal, peaks, slope_sign, no_gaps, mode='up', look_ahead=1):
 def eliminate_same_peak(deriv_1s, deriv_13s, peaks_13):
     """Determine which groups of peaks fall on the same actual peak in the deriv_1s.
     Let only the highest point in deriv_13s pass.
+
+    Parameters
+    ----------
+    deriv_1s: numpy.ndarray[float]
+        Smoothed first derivative of the time series
+    deriv_13s: numpy.ndarray[float]
+        Smoothed first times third derivative of the time series
+    peaks_13: numpy.ndarray[int]
+        Indices of the positions of peaks in derivative deriv_13s
+
+    Returns
+    -------
+    passed: numpy.ndarray[bool]
+        Mask for the passed peaks in peaks_13
     """
     same_pks = np.zeros(len(peaks_13) - 1, dtype=np.bool_)
     for i, pk in enumerate(peaks_13[:-1]):
@@ -429,7 +636,7 @@ def eliminate_same_peak(deriv_1s, deriv_13s, peaks_13):
             pk_h = max(pk1_h, pk2_h)
             all_below = np.all(deriv_1s[pk:peaks_13[i + 1] + 1] < 0.9 * pk_h)
             same_pks[i] = all_below
-    
+
     # let only the highest point in deriv_13s pass
     passed = np.ones(len(peaks_13), dtype=np.bool_)
     last_i = -1
@@ -453,6 +660,24 @@ def eliminate_same_peak(deriv_1s, deriv_13s, peaks_13):
 def check_depth_slope(signal, deriv_1s, depths, peaks_2_neg, peaks_2_pos):
     """Compare the depth of each in/egress to the scatter (in the raw light curve)
     as well as the slope changes in the curve.
+
+    Parameters
+    ----------
+    signal: numpy.ndarray[float]
+        Measurement values of the time series
+    deriv_1s: numpy.ndarray[float]
+        Smoothed first derivative of the time series
+    depths: numpy.ndarray[float]
+        Eclipse depths
+    peaks_2_neg: numpy.ndarray[int]
+        Indices of the positions of negative peaks in the second derivative
+    peaks_2_pos: numpy.ndarray[int]
+        Indices of the positions of positive peaks in the second derivative
+
+    Returns
+    -------
+    passed: numpy.ndarray[bool]
+        Mask for the passed eclipses
     """
     n_peaks = len(peaks_2_neg)
     max_i = len(signal) - 1
@@ -478,7 +703,42 @@ def check_depth_slope(signal, deriv_1s, depths, peaks_2_neg, peaks_2_pos):
 
 def mark_eclipses(times, signal, signal_s, s_derivs, r_derivs, n_kernel):
     """Mark the positions of eclipse in/egress
-    See: 'prepare_derivatives' to get the input for this function.
+
+    Parameters
+    ----------
+    times: numpy.ndarray[float]
+        Timestamps of the time series
+    signal: numpy.ndarray[float]
+        Measurement values of the time series
+    signal_s: numpy.ndarray[float]
+        Smoothed measurement values of the time series
+    s_derivs: numpy.ndarray[float]
+        Smoothed derivatives of the time series
+    r_derivs: numpy.ndarray[float]
+        Raw derivatives of the time series
+    n_kernel: int
+        Averaging kernel width
+
+    Returns
+    -------
+    peaks: numpy.ndarray[int]
+        Vertical stack of indices of various positions of peaks in
+        the derivatives
+    added_snr: numpy.ndarray[float]
+        Combined signal-to-noise measure for the peaks
+    slope_sign: numpy.ndarray[int]
+        Sign of the slope in the signal at the peak locations in the
+        first derivative
+    sine_like: numpy.ndarray[bool]
+        Boolean flag for sine-wave-like signal
+
+    See Also
+    --------
+    prepare_derivatives
+
+    Notes
+    -----
+    See 'prepare_derivatives' to get the input for this function.
     Returns all peak position arrays in a vertically stacked group,
     the added_snr snr measurements and the slope sign (+ ingress, - egress).
     """
@@ -528,7 +788,7 @@ def mark_eclipses(times, signal, signal_s, s_derivs, r_derivs, n_kernel):
     else:
         look_ahead = 2
     peaks_2_neg = curve_walker(deriv_2s, peaks_13, slope_sign, no_gaps, mode='down', look_ahead=look_ahead)
-    
+
     # if peaks_2_neg start converging on the same points, signal might be sine-like
     check_converge = np.zeros([n_peaks], dtype=bool)
     check_converge[:-1] = (np.diff(peaks_2_neg) < 3)
@@ -550,7 +810,7 @@ def mark_eclipses(times, signal, signal_s, s_derivs, r_derivs, n_kernel):
     #     # only correct the converging ones
     #     peaks_2_nn = curve_walker(deriv_2s, peaks_2_pos, slope_sign, no_gaps, mode='down_to_zero', look_ahead=1)
     #     peaks_2_neg[check_converge] = peaks_2_nn[check_converge]
-    
+
     # in/egress peaks (eclipse edges) and bottoms are adjusted a bit
     peaks_edge = np.clip(peaks_2_neg - slope_sign + (n_kernel % 2) - (n_kernel == 2) * neg_slope, 0, max_i)
     peaks_bot = np.clip(peaks_2_pos + (n_kernel % 2), 0, max_i)
@@ -578,7 +838,7 @@ def mark_eclipses(times, signal, signal_s, s_derivs, r_derivs, n_kernel):
     else:
         # do some additional more advanced tests for confidence level
         passed_2 = np.ones([len(peaks_13)], dtype=bool)
-        
+
         # define points away from the peaks and a mask for all peaks
         point_outside = (2 * peaks_2_neg - peaks_2_pos).astype(int)
         point_outside = np.clip(point_outside, 0, max_i)
@@ -592,7 +852,7 @@ def mark_eclipses(times, signal, signal_s, s_derivs, r_derivs, n_kernel):
             mask_peaks = np.ones(len(times), dtype=bool)
         else:
             reduce_noise = False
-        
+
         # get the estimates for the noise in signal_s
         noise_0 = np.average(np.abs(deriv_1r[mask_peaks] * dt[mask_peaks])) * (1 - 0.5 * (sine_like | reduce_noise))
         # signal to noise in signal_s: difference in height in/out of eclipse
@@ -624,11 +884,11 @@ def mark_eclipses(times, signal, signal_s, s_derivs, r_derivs, n_kernel):
         value_around = np.min([deriv_13s[point_outside], deriv_13s[peaks_bot]], axis=0)
         snr_13 = (deriv_13s[peaks_13] - value_around) / noise_13
         passed_2 &= (snr_13 > 2)
-        
+
         # do a final check on the total 'eclipse strength'
         added_snr = (snr_0 + snr_1 + snr_2 + snr_3)
         passed_2 &= (added_snr > 10)
-        
+
         # compare to the scatter in the raw signal
         depths = signal_s[peaks_edge] - signal_s[peaks_bot]
         passed_2 &= check_depth_slope(signal, deriv_1s, depths, peaks_2_neg, peaks_2_pos)
@@ -668,16 +928,34 @@ def mark_eclipses(times, signal, signal_s, s_derivs, r_derivs, n_kernel):
 
 @nb.njit(cache=True)
 def local_extremum(a, start, right=True, maximum=True):
-    """Walk left or right in a 1D-array to find a local extremum."""
+    """Walk left or right in a 1D-array to find a local extremum.
+
+    Parameters
+    ----------
+    a: numpy.ndarray[float]
+        Measurement values of the time series
+        Curve to be walked along
+    start: int
+        Starting position in a
+    right: bool
+        Walk to the right or to the left
+    maximum: bool
+        Find a maximum or a minimum
+
+    Returns
+    -------
+    i: int
+        End position in a
+    """
     max_i = len(a) - 1
     step = right - (not right)
-    
+
     def condition(prev, cur):
         if maximum:
             return (prev <= cur)
         else:
             return (prev >= cur)
-    
+
     i = start
     prev = a[i]
     cur = a[i]
@@ -698,6 +976,13 @@ def match_in_egress(times, signal_s, added_snr, peaks_edge, peaks_bot, neg_slope
     """Match up the best combinations of ingress and egress to form full eclipses.
     This is done by chopping all peaks up into parts with consecutive sets of
     ingresses and egresses (through slope sign), and then matching the most alike ones.
+
+    Parameters
+    ----------
+    times: numpy.ndarray[float]
+        Timestamps of the time series
+    signal_s: numpy.ndarray[float]
+        Smoothed measurement values of the time series
     """
     # define some recurring variables
     max_i = len(times) - 1
@@ -721,7 +1006,7 @@ def match_in_egress(times, signal_s, added_snr, peaks_edge, peaks_bot, neg_slope
                 until_2 = until_1 + 1
             else:
                 until_2 = indices[until_1:][pos_slope[until_1:]][0]
-        
+
         if (not used[i]) & (pos_slope[i]):
             # these need to be indices indicating the position in the original list of eclipses
             ingress = indices[i:until_1]
@@ -812,6 +1097,15 @@ def assemble_eclipses(times, signal, signal_s, peaks, added_snr, slope_sign):
     Returns the array of eclipse indices, the added_snr statistic (averaged
     for the full eclipses) and an array with flags (meaning:
     0=full eclipse, 1=left half and 2=right half)
+
+    Parameters
+    ----------
+    times: numpy.ndarray[float]
+        Timestamps of the time series
+    signal: numpy.ndarray[float]
+        Measurement values of the time series
+    signal_s: numpy.ndarray[float]
+        Smoothed measurement values of the time series
     """
     if (len(added_snr) == 0):
         # nothing to assemble
@@ -982,11 +1276,18 @@ def measure_eclipses(times, signal, ecl_indices, flags_lrf):
     noise cases, providing the smoothed light curve can give more accurate eclipse depths.
     Eclipse widths for half eclipses are estimated as twice the width of half the eclipse.
     The eclipse midpoints for half eclipses are taken to be the lowest measured point.
-    
+
     A measure for flat-bottom-ness is also given (ratio between measured
     eclipse width and width at the bottom. Be aware that a ratio of zero does
     not mean that it is not a flat-bottomed eclipse per se. On the other hand,
     a non-zero ratio is a strong indication that there is a flat bottom.
+
+    Parameters
+    ----------
+    times: numpy.ndarray[float]
+        Timestamps of the time series
+    signal: numpy.ndarray[float]
+        Measurement values of the time series
     """
     if (len(flags_lrf) > 0):
         # prepare some arrays
@@ -1187,7 +1488,7 @@ def test_separation(variable, group_1, group_2):
     """
     n_g1 = len(variable[group_1])
     n_g2 = len(variable[group_2])
-    
+
     if (n_g2 < 3) | (n_g1 < 3):
         # no separation if there is nothing to separate,
         # or cannot say anything about distribution of 1 or 2 points
@@ -1545,6 +1846,11 @@ def flags_pst_from_period(t_0, period, ecl_mid, depths, widths, added_snr, flags
 def found_ratio(times, ecl_mid, flags_pst, period, n_found):
     """Calculates the ratio between the number of found eclipses and
     those theoretically possible given the ephemeris and gaps in the data.
+
+    Parameters
+    ----------
+    times: numpy.ndarray[float]
+        Timestamps of the time series
     """
     prim = (flags_pst == 1)  # primaries
     sec = (flags_pst == 2)  # secondaries
@@ -1603,6 +1909,13 @@ def found_ratio(times, ecl_mid, flags_pst, period, n_found):
 def normalised_slope(times, signal_s, deriv_1r, ecl_indices, ecl_mask, prim_sec, m_full):
     """Calculates the average slope of the eclipses and normalises it by
     the median derivative of the light curve outside the eclipses.
+
+    Parameters
+    ----------
+    times: numpy.ndarray[float]
+        Timestamps of the time series
+    signal_s: numpy.ndarray[float]
+        Smoothed measurement values of the time series
     """
     mask = prim_sec & m_full
     if (len(ecl_indices[prim_sec]) == 0):
@@ -1633,6 +1946,13 @@ def normalised_slope(times, signal_s, deriv_1r, ecl_indices, ecl_mask, prim_sec,
 def normalised_symmetry(times, signal, ecl_indices):
     """Compares the slopes and depths of the eclipses at the left and
     right hand side to calculate a parameter measuring the eclipse symmetry.
+
+    Parameters
+    ----------
+    times: numpy.ndarray[float]
+        Timestamps of the time series
+    signal: numpy.ndarray[float]
+        Measurement values of the time series
     """
     if (len(ecl_indices) == 0):
         symmetry = 1
@@ -1657,6 +1977,10 @@ def normalised_equality(added_snr, depths, widths, flags_pst):
     """Calculate the deviations in added_snr, depth and width between all
     primary and all secondary eclipses to get a measure of the
     equality of eclipses
+
+    Parameters
+    ----------
+
     """
     prim = (flags_pst == 1)  # primaries
     sec = (flags_pst == 2)  # secondaries
@@ -1699,6 +2023,13 @@ def eclipse_score(times, signal_s, deriv_1r, period, ecl_indices, ecl_mid, added
                   flags_lrf, flags_pst):
     """Determine a number that expresses the score that we have found actual eclipses.
     Below 0.36 is probably a false positive, above 0.36 is quite probably and EB.
+
+    Parameters
+    ----------
+    times: numpy.ndarray[float]
+        Timestamps of the time series
+    signal_s: numpy.ndarray[float]
+        Smoothed measurement values of the time series
     """
     if (len(ecl_mid) != 0):
         primaries = (flags_pst == 1)
@@ -1760,6 +2091,13 @@ def eclipse_score_attr(times, signal_s, deriv_1r, period, ecl_indices, ecl_mid, 
     """Determine a number that expresses the score that we have found actual eclipses.
     Below 0.36 is probably a false positive, above 0.36 is quite probably and EB.
     Also returns the attributes that go into calculating the score.
+
+    Parameters
+    ----------
+    times: numpy.ndarray[float]
+        Timestamps of the time series
+    signal_s: numpy.ndarray[float]
+        Smoothed measurement values of the time series
     """
     if (len(ecl_mid) != 0):
         primaries = (flags_pst == 1)
@@ -1861,7 +2199,7 @@ def interpret_flags(flags_lrf, flags_pst):
 
 def find_eclipses(times, signal, mode=1, max_n=80, tess_sectors=False, rf_classifier=True):
     """Find the eclipses, ephemeris and the statistics about the eclipses.
-    
+
     Parameters
     ----------
     times: numpy.ndarray[float]
@@ -1880,7 +2218,7 @@ def find_eclipses(times, signal, mode=1, max_n=80, tess_sectors=False, rf_classi
         Whether to use the random forrest classifier for the score
         (0='not EB', 1='EB') by IJspeert et al. (2024), or to use
         the original eclipse score by IJspeert et al. (2021).
-    
+
     Returns
     -------
     Any of three possible sets of variables depending on the mode,
@@ -1901,7 +2239,7 @@ def find_eclipses(times, signal, mode=1, max_n=80, tess_sectors=False, rf_classi
     ecl_indices: numpy.ndarray[int]
     flags_lrf: numpy.ndarray[int]
     flags_pst: numpy.ndarray[int]
-    
+
     Notes
     -----
     It is recommended to run ingest_signal() before running find_eclipses
@@ -1909,7 +2247,7 @@ def find_eclipses(times, signal, mode=1, max_n=80, tess_sectors=False, rf_classi
     If multiple TESS sectors are used, setting tess_sectors=True will make
     sure certain parts of the analysis are done on a per-sector basis. This
     usually improves results.
-    
+
     There are several modes of operation:
     0: Only find and return the individual eclipses without looking for a period
     1: Only find and return the ephemeris (t_0, period), eclipse score and collective
@@ -1987,7 +2325,7 @@ def find_eclipses(times, signal, mode=1, max_n=80, tess_sectors=False, rf_classi
             # legacy mode with the manually designed eclipse score
             score = eclipse_score(times, signal_s, r_derivs[0], period, ecl_indices, ecl_mid,
                                   added_snr, widths, depths, flags_lrf, flags_pst)
-        
+
     elif (len(flags_lrf) != 0):
         # take some measurements
         ecl_mid, widths, depths, ratios = measure_eclipses(times, signal_s, ecl_indices, flags_lrf)

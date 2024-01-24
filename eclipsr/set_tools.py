@@ -79,7 +79,7 @@ def ephem_from_file(file_name, delimiter=None):
     return result
 
 
-def analyse_lc_from_file(file_name, delimiter=None, tess_sectors=False, save_dir=None):
+def analyse_lc_from_file(file_name, delimiter=None, mode=2, max_n=80, tess_sectors=False, save_dir=None):
     """Do all steps of the algorithm for a given light curve file
 
     Parameters
@@ -90,6 +90,11 @@ def analyse_lc_from_file(file_name, delimiter=None, tess_sectors=False, save_dir
         first three columns, respectively.
     delimiter: None, str
         Column separator for the light curve file
+    mode: int
+        Mode of operation: 0, 1, 2 or -1
+        See notes for explanation of the modes.
+    max_n: int
+        Maximum smoothing kernel width in data points
     tess_sectors: bool
         Whether to use TESS sectors to divide up the time series
         or to see it as one continuous piece.
@@ -108,7 +113,7 @@ def analyse_lc_from_file(file_name, delimiter=None, tess_sectors=False, save_dir
     source_id = os.path.basename(file_name)
     
     try:
-        result = ecf.find_eclipses(times, signal, mode=2, max_n=80, tess_sectors=tess_sectors)
+        result = ecf.find_eclipses(times, signal, mode=mode, max_n=max_n, tess_sectors=tess_sectors)
     except:
         print(f'an error happened in the following file: {file_name}')
         result = empty_result
@@ -118,7 +123,7 @@ def analyse_lc_from_file(file_name, delimiter=None, tess_sectors=False, save_dir
     return result
 
 
-def analyse_lc_from_tic(tic, all_tic=None, all_files=None, save_dir=None):
+def analyse_lc_from_tic(tic, all_tic=None, all_files=None, mode=2, max_n=80, save_dir=None):
     """Do all steps of the algorithm for a given TIC number
 
     Parameters
@@ -128,9 +133,15 @@ def analyse_lc_from_tic(tic, all_tic=None, all_files=None, save_dir=None):
         and later reference.
     all_tic: numpy.ndarray[int]
         List of all the TESS TIC numbers corresponding to all_files
+        If all files in all_files are for the same tic, this may be None.
     all_files: numpy.ndarray[str]
         List of all the TESS data product '.fits' files. The files
         with the corresponding TIC number are selected.
+    mode: int
+        Mode of operation: 0, 1, 2 or -1
+        See notes for explanation of the modes.
+    max_n: int
+        Maximum smoothing kernel width in data points
     save_dir: str
         Path to a directory for saving the results. Also used to load
         previous analysis results.
@@ -140,7 +151,12 @@ def analyse_lc_from_tic(tic, all_tic=None, all_files=None, save_dir=None):
     result: tuple
         Output of the function find_eclipses (mode=2)
     """
-    tic_files = all_files[all_tic == tic]
+    if all_tic is not None:
+        tic_files = all_files[all_tic == tic]
+    else:
+        # assume all files are relevant
+        tic_files = all_files
+
     times = np.array([])
     signal = np.array([])
     qual_flags = np.array([])
@@ -164,7 +180,7 @@ def analyse_lc_from_tic(tic, all_tic=None, all_files=None, save_dir=None):
         result = empty_result
     else:
         try:
-            result = ecf.find_eclipses(times, signal, mode=2, max_n=80, tess_sectors=True)
+            result = ecf.find_eclipses(times, signal, mode=mode, max_n=max_n, tess_sectors=True)
         except:
             print(f'an error happened in the following tic: {tic}')
             result = empty_result

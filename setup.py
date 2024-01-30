@@ -20,5 +20,4 @@ setup(name="eclipsr",
       package_dir={'eclipsr': 'eclipsr'},
       package_data={'eclipsr': ['data/tess_sectors.dat', 'data/random_forrest.dump']},
       include_package_data=True,
-      install_requires=['numpy', 'scipy', 'numba', 'scikit-learn', 'matplotlib', 'h5py'],
-      extras_require={'fits functionality': ['astropy']})
+      install_requires=['numpy', 'scipy', 'numba', 'scikit-learn', 'matplotlib', 'h5py', 'astropy'])

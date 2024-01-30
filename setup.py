@@ -18,6 +18,6 @@ setup(name="eclipsr",
       long_description=open('README.md').read(),
       packages=['eclipsr'],
       package_dir={'eclipsr': 'eclipsr'},
-      package_data={'eclipsr': ['data/tess_sectors.dat', 'data/random_forrest.dump']},
+      package_data={'eclipsr': ['data/tess_sectors.dat', 'data/random_forrest.dump', 'data/sim_000_lc.dat']},
       include_package_data=True,
       install_requires=['numpy', 'scipy', 'numba', 'scikit-learn', 'matplotlib', 'h5py', 'astropy'])

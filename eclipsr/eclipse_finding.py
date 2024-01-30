@@ -2322,7 +2322,7 @@ def find_eclipses(times, signal, mode=1, max_n=80, tess_sectors=False, rf_classi
             features = np.array(features[1:])
             rfc_file = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'data', 'random_forrest.dump')
             rfc = joblib.load(rfc_file)
-            score = rfc.predict(features[np.newaxis])
+            score = rfc.predict(features[np.newaxis])[0]
         else:
             # legacy mode with the manually designed eclipse score
             features = eclipse_score_attr(times, signal_s, r_derivs[0], period, ecl_indices, ecl_mid,

@@ -327,6 +327,10 @@ def read_results(file_name, verbose=False):
     """Read the full output of the find_eclipses function from the hdf5 file.
     This returns the set of variables as they appear in eclipsr and closes the file.
     """
+    # check some input
+    if not file_name.endswith('.hdf5'):
+        file_name += '.hdf5'
+    # open the file
     with h5py.File(file_name, 'r') as file:
         identifier = file.attrs['identifier']
         date_time = file.attrs['date_time']

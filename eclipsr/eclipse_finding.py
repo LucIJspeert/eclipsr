@@ -668,7 +668,7 @@ def check_depth_slope(signal, deriv_1s, depths, peaks_2_neg, peaks_2_pos):
     deriv_1s: numpy.ndarray[float]
         Smoothed first derivative of the time series
     depths: numpy.ndarray[float]
-        Eclipse depths
+        Depths of the eclipses
     peaks_2_neg: numpy.ndarray[int]
         Indices of the positions of negative peaks in the second derivative
     peaks_2_pos: numpy.ndarray[int]
@@ -974,8 +974,6 @@ def local_extremum(a, start, right=True, maximum=True):
 @nb.njit(cache=True)
 def match_in_egress(times, signal_s, added_snr, peaks_edge, peaks_bot, neg_slope, pos_slope):
     """Match up the best combinations of ingress and egress to form full eclipses.
-    This is done by chopping all peaks up into parts with consecutive sets of
-    ingresses and egresses (through slope sign), and then matching the most alike ones.
 
     Parameters
     ----------
@@ -983,6 +981,28 @@ def match_in_egress(times, signal_s, added_snr, peaks_edge, peaks_bot, neg_slope
         Timestamps of the time series
     signal_s: numpy.ndarray[float]
         Smoothed measurement values of the time series
+    added_snr: numpy.ndarray[float]
+        Signal-to-noise measure of the peaks
+    peaks_edge: numpy.ndarray[int]
+        Indices of peaks in the time series
+    peaks_bot: numpy.ndarray[int]
+        Indices of bottom points corresponding to the peaks
+    neg_slope: numpy.ndarray[bool]
+        Boolean array indicating negative slopes
+    pos_slope: numpy.ndarray[bool]
+        Boolean array indicating positive slopes
+
+    Returns
+    -------
+    full_ecl: numpy.ndarray[int]
+        Indices representing the matched combinations of ingress and egress to form full eclipses.
+    not_used: numpy.ndarray[bool]
+        Boolean array indicating whether peaks were used in forming full eclipses.
+
+    Notes
+    -----
+    This is done by chopping all peaks up into parts with consecutive sets of
+    ingresses and egresses (through slope sign), and then matching the most alike ones.
     """
     # define some recurring variables
     max_i = len(times) - 1
@@ -1091,12 +1111,6 @@ def match_in_egress(times, signal_s, added_snr, peaks_edge, peaks_bot, neg_slope
 @nb.njit(cache=True)
 def assemble_eclipses(times, signal, signal_s, peaks, added_snr, slope_sign):
     """Goes through the found peaks to assemble the eclipses in a neat array of indices.
-    Separates peaks based on added_snr.
-    Eclipses are marked by 4 indices each: ingress top and bottom,
-    and egress bottom and top (in that order).
-    Returns the array of eclipse indices, the added_snr statistic (averaged
-    for the full eclipses) and an array with flags (meaning:
-    0=full eclipse, 1=left half and 2=right half)
 
     Parameters
     ----------
@@ -1106,6 +1120,32 @@ def assemble_eclipses(times, signal, signal_s, peaks, added_snr, slope_sign):
         Measurement values of the time series
     signal_s: numpy.ndarray[float]
         Smoothed measurement values of the time series
+    peaks: tuple
+        A tuple containing different types of peaks in the time series
+    added_snr: numpy.ndarray[float]
+        Signal-to-noise measure of the peaks
+    slope_sign: numpy.ndarray[bool]
+        Boolean array indicating slope signs
+
+    Returns
+    -------
+    ecl_indices: numpy.ndarray[int]
+        Array of eclipse indices, each representing
+        ingress top, ingress bottom, egress bottom, and egress top.
+    added_snr: numpy.ndarray[float]
+        Averaged signal-to-noise ratio statistic for the full eclipses.
+    flags_lrf: numpy.ndarray[int]
+        Array of flags indicating eclipse types:
+        Full eclipse (0), Left half (1), Right half (2)
+
+    Notes
+    -----
+    Separates peaks based on added_snr.
+    Eclipses are marked by 4 indices each: ingress top and bottom,
+    and egress bottom and top (in that order).
+    Returns the array of eclipse indices, the added_snr statistic (averaged
+    for the full eclipses) and an array with flags (meaning:
+    0=full eclipse, 1=left half and 2=right half)
     """
     if (len(added_snr) == 0):
         # nothing to assemble
@@ -1272,15 +1312,6 @@ def assemble_eclipses(times, signal, signal_s, peaks, added_snr, slope_sign):
 @nb.njit(cache=True)
 def measure_eclipses(times, signal, ecl_indices, flags_lrf):
     """Get the eclipse midpoints, widths and depths.
-    Eclipse depths are averaged between the in and egress side for full eclipses. In high
-    noise cases, providing the smoothed light curve can give more accurate eclipse depths.
-    Eclipse widths for half eclipses are estimated as twice the width of half the eclipse.
-    The eclipse midpoints for half eclipses are taken to be the lowest measured point.
-
-    A measure for flat-bottom-ness is also given (ratio between measured
-    eclipse width and width at the bottom. Be aware that a ratio of zero does
-    not mean that it is not a flat-bottomed eclipse per se. On the other hand,
-    a non-zero ratio is a strong indication that there is a flat bottom.
 
     Parameters
     ----------
@@ -1288,6 +1319,34 @@ def measure_eclipses(times, signal, ecl_indices, flags_lrf):
         Timestamps of the time series
     signal: numpy.ndarray[float]
         Measurement values of the time series
+    ecl_indices: numpy.ndarray[int]
+        Array of eclipse indices, each representing ingress top, ingress bottom, egress bottom, and egress top.
+    flags_lrf: numpy.ndarray[int]
+        Array of flags indicating eclipse types:
+        Full eclipse (0), Left half (1), Right half (2)
+
+    Returns
+    -------
+    ecl_mid: numpy.ndarray[float]
+        Eclipse midpoints
+    widths: numpy.ndarray[float]
+        Widths of the eclipses
+    depths: numpy.ndarray[float]
+        Depths of the eclipses
+    ratios: numpy.ndarray[float]
+        Array containing flat-bottom-ness ratios
+
+    Notes
+    -----
+    Eclipse depths are averaged between the in and egress side for full eclipses. In high
+    noise cases, providing the smoothed light curve can give more accurate eclipse depths.
+    Eclipse widths for half eclipses are estimated as twice the width of half the eclipse.
+    The eclipse midpoints for half eclipses are taken to be the lowest measured point.
+
+    A measure for flat-bottom-ness is also given (ratio between measured
+    eclipse width and width at the bottom). Be aware that a ratio of zero does
+    not mean that it is not a flat-bottomed eclipse per se. On the other hand,
+    a non-zero ratio is a strong indication that there is a flat bottom.
     """
     if (len(flags_lrf) > 0):
         # prepare some arrays
@@ -1326,10 +1385,24 @@ def measure_eclipses(times, signal, ecl_indices, flags_lrf):
 @nb.njit(cache=True)
 def construct_range(t_0, period, domain, p_min=0.1):
     """More elaborate numpy.arange algorithm.
-    t_0: the fixed point in the range, from where the pattern builds outward.
-    period: denotes the step size.
-    domain: two values (array-like) that give the borders of the range.
-    p_min: minimum period value; default is 0.1 (day).
+
+    Parameters
+    ----------
+    t_0: float
+        The fixed point in the range
+    period: float
+        Orbital period, denotes the step size
+    domain: tuple
+        Two values (array-like) that give the borders of the range
+    p_min: float, optional
+        Minimum period value; default is 0.1 (day)
+
+    Returns
+    -------
+    points: numpy.ndarray[float]
+        Array containing the constructed range of points.
+    n_range: numpy.ndarray[int]
+        Array containing the range of integers used in constructing the points.
     """
     if (period < p_min):
         n_before = np.ceil((domain[0] - t_0) / p_min)
@@ -1345,12 +1418,37 @@ def construct_range(t_0, period, domain, p_min=0.1):
 @nb.njit(cache=True)
 def pattern_test(ecl_mid, added_snr, widths, time_frame, ecl_0=None, p_max=None, p_step=None, timestep=0):
     """Test for the presence of a regular pattern in a set of eclipse midpoints.
-    ecl_mid: measured eclipse positions
-    added_snr: measured eclipse significance values
-    widths: eclipse widths
-    p_min, p_max, p_step: period range to search and step size.
-    The absolute lower limit is 0.001 (assumed to be in days).
-    d_phase is the tolerance in the eclipse phase.
+
+    Parameters
+    ----------
+    ecl_mid: numpy.ndarray[float]
+        Measured eclipse positions
+    added_snr: numpy.ndarray[float]
+        Signal-to-noise measure of the eclipses
+    widths: numpy.ndarray[float]
+        Widths of the eclipses
+    time_frame: tuple
+        Time frame within which to search for patterns
+    ecl_0: int, optional
+        Reference eclipse index
+    p_max: float, optional
+        Maximum period value to search
+    p_step: float, optional
+        Step size for period search
+    timestep: float
+        Time step of the data (median(diff(times)))
+
+    Returns
+    -------
+    periods: numpy.ndarray[float]
+        Array of periods tested
+    gof: numpy.ndarray[float]
+        Goodness of fit values for each tested period
+
+    Notes
+    -----
+    Minimum period value to search is calculated as 0.95 * min(abs(t_0 - ecl_mid)),
+    the absolute lower limit is 0.001 (assumed to be in days)
     """
     # set the maximum period and reference eclipse, if not given
     n_ecl = len(ecl_mid)
@@ -1403,7 +1501,30 @@ def pattern_test(ecl_mid, added_snr, widths, time_frame, ecl_0=None, p_max=None,
 @nb.njit(cache=True)
 def extract_pattern(ecl_mid, widths, added_snr, t_0, ecl_period, time_frame):
     """Get the indices of the eclipses matching the pattern.
-    See: pattern_test
+
+    Parameters
+    ----------
+    ecl_mid: numpy.ndarray[float]
+        Measured eclipse positions
+    widths: numpy.ndarray[float]
+        Widths of the eclipses
+    added_snr: numpy.ndarray[float]
+        Signal-to-noise measure of the eclipses
+    t_0: float
+        Reference time for the pattern
+    ecl_period: float
+        Period of the eclipse pattern
+    time_frame: tuple
+        Time frame within which to search for patterns
+
+    Returns
+    -------
+    numpy.ndarray[int]
+        Indices of the eclipses matching the pattern
+
+    See Also
+    --------
+    pattern_test
     """
     indices = np.arange(len(ecl_mid))
     pattern, n_range = construct_range(t_0, ecl_period, time_frame)
@@ -1440,9 +1561,25 @@ def extract_pattern(ecl_mid, widths, added_snr, t_0, ecl_period, time_frame):
 @nb.njit(cache=True)
 def measure_phase_dev(periods, ecl_mid):
     """Measures how closely the phase folded eclipses are grouped in phase space.
+
+    Parameters
+    ----------
+    periods: numpy.ndarray[float]
+        Array of periods to fold the eclipse midpoints
+    ecl_mid: numpy.ndarray[float]
+        Midpoints of the eclipses
+
+    Returns
+    -------
+    phases: numpy.ndarray[float]
+        Phases of the folded eclipse midpoints
+    phase_dev: numpy.ndarray[float]
+        Median absolute deviation (MAD) of the phases
+
+    Notes
+    -----
     Folds the times of eclipse midpoints by a given set of periods and measures the
     median absolute deviation (MAD) of the phases.
-    Returns the phases and the total MADs.
     """
     # prepare the period array
     n_periods = len(periods)
@@ -1460,7 +1597,32 @@ def measure_phase_dev(periods, ecl_mid):
 
 
 def add_missing_ecl(group, ecl_i, ecl_mid, phases, added_snr, g_avg_phase, g_avg_w, period):
-    """Look at the eclipse phases for missing eclipses within the average eclipse width."""
+    """Look at the eclipse phases for missing eclipses within the average eclipse width.
+
+    Parameters
+    ----------
+    group: numpy.ndarray[int]
+        Indices of the current group of eclipses
+    ecl_i: numpy.ndarray[int]
+        Indices of all eclipses
+    ecl_mid: numpy.ndarray[float]
+        Midpoints of the eclipses
+    phases: numpy.ndarray[float]
+        Phases of the eclipses
+    added_snr: numpy.ndarray[float]
+        Signal-to-noise measure of the eclipses
+    g_avg_phase: float
+        Average phase of the group
+    g_avg_w: float
+        Average width of the group
+    period: float
+        Orbital period in days
+
+    Returns
+    -------
+    numpy.ndarray[int]
+        Updated indices of the group of eclipses.
+    """
     g_avg_snr = np.mean(added_snr[group])
     g_std_snr = np.std(added_snr[group])
     if g_std_snr == 0:
@@ -1485,6 +1647,21 @@ def add_missing_ecl(group, ecl_i, ecl_mid, phases, added_snr, g_avg_phase, g_avg
 def test_separation(variable, group_1, group_2):
     """Simple test to see whether the variable is split into separate
     distributions or not.
+
+    Parameters
+    ----------
+    variable: numpy.ndarray[float]
+        The variable to test separation
+    group_1: numpy.ndarray[bool]
+        Boolean array indicating membership to group 1
+    group_2: numpy.ndarray[bool]
+        Boolean array indicating membership to group 2
+
+    Returns
+    -------
+    separate: bool
+        True if the variable is split into separate distributions,
+        False otherwise
     """
     n_g1 = len(variable[group_1])
     n_g2 = len(variable[group_2])
@@ -1512,6 +1689,25 @@ def test_separation(variable, group_1, group_2):
 def determine_primary(group_1, group_2, depths, widths, added_snr):
     """Some simple logic to determine which group of eclipses is
     to be designated as primary eclipses.
+
+    Parameters
+    ----------
+    group_1: numpy.ndarray[bool]
+        Boolean array indicating membership to group 1
+    group_2: numpy.ndarray[bool]
+        Boolean array indicating membership to group 2
+    depths: numpy.ndarray[float]
+        Depths of the eclipses
+    widths: numpy.ndarray[float]
+        Widths of the eclipses
+    added_snr: numpy.ndarray[float]
+        Signal-to-noise measure of the eclipses
+
+    Returns
+    -------
+    primary_g1: bool
+        True if group 1 is designated as primary eclipses,
+        False otherwise
     """
     n_g1 = len(added_snr[group_1])
     n_g2 = len(added_snr[group_2])
@@ -1539,8 +1735,38 @@ def determine_primary(group_1, group_2, depths, widths, added_snr):
 # @nb.njit(cache=True)  # not sped up
 def estimate_period(ecl_mid, widths, depths, added_snr, flags_lrf, timestep):
     """Determines the time of the midpoint of the first primary eclipse (t0)
-    and the eclipse (orbital if possible) period. Also returns an array of flags
-    with a '1' for primary and '2' for secondary for each eclipse.
+    and the eclipse (orbital if possible) period.
+
+    Parameters
+    ----------
+    ecl_mid: numpy.ndarray[float]
+        Measured eclipse positions
+    widths: numpy.ndarray[float]
+        Widths of the eclipses
+    depths: numpy.ndarray[float]
+        Depths of the eclipses
+    added_snr: numpy.ndarray[float]
+        Signal-to-noise measure of the eclipses
+    flags_lrf: numpy.ndarray[int]
+        Array of flags indicating eclipse types:
+        Full eclipse (0), Left half (1), Right half (2)
+    timestep: float
+        Time step of the data (median(diff(times)))
+
+    Returns
+    -------
+    t_zero: float
+        Time of the midpoint of the first primary eclipse. -1 if not found.
+    period: float
+        Eclipse (orbital if possible) period. -1 if not found.
+    flags_pst: numpy.ndarray[int]
+        Array of flags for each eclipse with a '1' for primary, '2' for secondary,
+        and '3' for rejected feature or potential tertiary.
+
+    Notes
+    -----
+    Also returns an array of flags with a '1' for primary
+    and '2' for secondary for each eclipse.
     Flag '3' means either a rejected feature in the light curve with high SNR,
     or a potential tertiary eclipse.
     """
@@ -1749,11 +1975,38 @@ def estimate_period(ecl_mid, widths, depths, added_snr, flags_lrf, timestep):
 
 def flags_pst_from_period(t_0, period, ecl_mid, depths, widths, added_snr, flags_lrf, timestep, prim_fixed=False):
     """If a period and t0 are known, this will mark the eclipses accordingly.
-    Also needs the eclipse midpoints, depths, widths and added_snr as input
-    plus the flags_lrf and the timestep of the data (median(diff(times))).
 
+    Parameters
+    ----------
+    t_0: float
+        Time of the midpoint of the first primary eclipse
+    period: float
+        Eclipse (orbital if possible) period
+    ecl_mid: numpy.ndarray[float]
+        Measured eclipse positions
+    depths: numpy.ndarray[float]
+        Depths of the eclipses
+    widths: numpy.ndarray[float]
+        Widths of the eclipses
+    added_snr: numpy.ndarray[float]
+        Signal-to-noise measure
+    flags_lrf: numpy.ndarray[int]
+        Array of flags indicating eclipse types:
+        Full eclipse (0), Left half (1), Right half (2)
+    timestep: float
+        Time step of the data (median(diff(times)))
+    prim_fixed: bool, optional
+        Set to True to take t_0 as ground truth. Defaults to False
+
+    Returns
+    -------
+    flags_pst: numpy.ndarray[int]
+        Array of flags for each eclipse with a '1' for primary, '2' for secondary,
+        and '3' for rejected feature or potential tertiary.
+
+    Notes
+    -----
     Follows almost the same exact steps as estimate_period (after it acquires a period)
-    prim_fixed can be set to True to take t_0 as ground truth.
     """
     m_full = (flags_lrf == 0)
     ecl_i = np.arange(len(ecl_mid))
@@ -1851,6 +2104,21 @@ def found_ratio(times, ecl_mid, flags_pst, period, n_found):
     ----------
     times: numpy.ndarray[float]
         Timestamps of the time series
+    ecl_mid: numpy.ndarray[float]
+        Measured eclipse positions
+    flags_pst: numpy.ndarray[int]
+        Array of flags for each eclipse with a '1' for primary, '2' for secondary,
+        and '3' for rejected feature or potential tertiary.
+    period: float
+        Orbital period in days
+    n_found: int
+        Number of found eclipses
+
+    Returns
+    -------
+    fnd_ratio: float
+        Ratio between the number of found eclipses and those theoretically possible
+        given the ephemeris and gaps in the data.
     """
     prim = (flags_pst == 1)  # primaries
     sec = (flags_pst == 2)  # secondaries
@@ -1916,6 +2184,22 @@ def normalised_slope(times, signal_s, deriv_1r, ecl_indices, ecl_mask, prim_sec,
         Timestamps of the time series
     signal_s: numpy.ndarray[float]
         Smoothed measurement values of the time series
+    deriv_1r: numpy.ndarray[float]
+        First derivative of the smoothed signal
+    ecl_indices: numpy.ndarray[int]
+        Indices of eclipses
+    ecl_mask: numpy.ndarray[bool]
+        Boolean mask indicating the location of eclipses
+    prim_sec: numpy.ndarray[bool]
+        Boolean mask indicating primary or secondary eclipses
+    m_full: numpy.ndarray[bool]
+        Boolean mask indicating full eclipses
+
+    Returns
+    -------
+    mean_norm_slope: float
+        The average slope of the eclipses normalized by the median derivative
+        of the light curve outside the eclipses.
     """
     mask = prim_sec & m_full
     if (len(ecl_indices[prim_sec]) == 0):
@@ -1939,7 +2223,8 @@ def normalised_slope(times, signal_s, deriv_1r, ecl_indices, ecl_mask, prim_sec,
         slope = slope_right * right_min + slope_left * (np.invert(right_min))
         # slope = np.min([height_right / width_right, height_left / width_left], axis=0)
     norm_factor = np.median(np.abs(deriv_1r[ecl_mask]))
-    return np.mean(slope) / norm_factor
+    mean_norm_slope = np.mean(slope) / norm_factor
+    return mean_norm_slope
 
 
 @nb.njit(cache=True)
@@ -1953,6 +2238,13 @@ def normalised_symmetry(times, signal, ecl_indices):
         Timestamps of the time series
     signal: numpy.ndarray[float]
         Measurement values of the time series
+    ecl_indices: numpy.ndarray[int]
+        Indices of eclipses
+
+    Returns
+    -------
+    symmetry: float
+        A parameter measuring the eclipse symmetry
     """
     if (len(ecl_indices) == 0):
         symmetry = 1
@@ -1980,7 +2272,20 @@ def normalised_equality(added_snr, depths, widths, flags_pst):
 
     Parameters
     ----------
+    added_snr: numpy.ndarray[float]
+        Signal-to-noise measure of the eclipses
+    depths: numpy.ndarray[float]
+        Depths of the eclipses
+    widths: numpy.ndarray[float]
+        Widths of the eclipses
+    flags_pst: numpy.ndarray[int]
+        Array of flags for each eclipse with a '1' for primary, '2' for secondary,
+        and '3' for rejected feature or potential tertiary.
 
+    Returns
+    -------
+    equality: float
+        A measure of the equality of eclipses
     """
     prim = (flags_pst == 1)  # primaries
     sec = (flags_pst == 2)  # secondaries
@@ -2030,6 +2335,11 @@ def eclipse_score(times, signal_s, deriv_1r, period, ecl_indices, ecl_mid, added
         Timestamps of the time series
     signal_s: numpy.ndarray[float]
         Smoothed measurement values of the time series
+
+    Returns
+    -------
+    score: float
+        A number expressing the likelihood of actual eclipses
     """
     if (len(ecl_mid) != 0):
         primaries = (flags_pst == 1)
@@ -2090,7 +2400,6 @@ def eclipse_score_attr(times, signal_s, deriv_1r, period, ecl_indices, ecl_mid, 
                        flags_lrf, flags_pst):
     """Determine a number that expresses the score that we have found actual eclipses.
     Below 0.36 is probably a false positive, above 0.36 is quite probably and EB.
-    Also returns the attributes that go into calculating the score.
 
     Parameters
     ----------
@@ -2098,6 +2407,27 @@ def eclipse_score_attr(times, signal_s, deriv_1r, period, ecl_indices, ecl_mid, 
         Timestamps of the time series
     signal_s: numpy.ndarray[float]
         Smoothed measurement values of the time series
+
+    Returns
+    -------
+    score: float
+        A number expressing the likelihood of actual eclipses
+    attr_0: float
+        Attribute 0 going into the eclipse score
+    attr_1: float
+        Attribute 1 going into the eclipse score
+    attr_2: float
+        Attribute 2 going into the eclipse score
+    attr_3: float
+        Attribute 3 going into the eclipse score
+    attr_4: float
+        Attribute 4 going into the eclipse score
+    penalty: float
+        Penalty factor applied to the score
+
+    Notes
+    -----
+    Also returns the attributes that go into calculating the score.
     """
     if (len(ecl_mid) != 0):
         primaries = (flags_pst == 1)
@@ -2160,6 +2490,23 @@ def eclipse_score_attr(times, signal_s, deriv_1r, period, ecl_indices, ecl_mid, 
 def eclipse_stats(flags_pst, widths, depths):
     """Measures the average width and depth for the primary and for the
     secondary eclipses, plus the standard deviations.
+
+    Parameters
+    ----------
+    flags_pst: numpy.ndarray[int]
+        Array of flags for each eclipse with a '1' for primary, '2' for secondary,
+        and '3' for rejected feature or potential tertiary.
+    widths: numpy.ndarray[float]
+        Widths of the eclipses
+    depths: numpy.ndarray[float]
+        Depths of the eclipses
+
+    Returns
+    -------
+    width_stats: numpy.ndarray[float]
+        Statistics of eclipse widths for primary and secondary eclipses
+    depth_stats: numpy.ndarray[float]
+        Statistics of eclipse depths for primary and secondary eclipses
     """
     width_stats = -np.ones((2, 2))
     depth_stats = -np.ones((2, 2))
@@ -2177,6 +2524,25 @@ def eclipse_stats(flags_pst, widths, depths):
 
 def interpret_flags(flags_lrf, flags_pst):
     """Converts the flags from integers to strings for easier interpretation.
+
+    Parameters
+    ----------
+    flags_lrf: numpy.ndarray[int]
+        Array of flags indicating eclipse types:
+        Full eclipse (0), Left half (1), Right half (2)
+    flags_pst: numpy.ndarray[int]
+        Array of flags for each eclipse with a '1' for primary, '2' for secondary,
+        and '3' for rejected feature or potential tertiary.
+
+    Returns
+    -------
+    flags_lrf_str: numpy.ndarray[str]
+        String representations of eclipse phase flags
+    flags_pst_str: numpy.ndarray[str]
+        String representations of eclipse type flags
+
+    Notes
+    -----
     in flags_lrf:
     0 is 'f' meaning full eclipse
     1 is 'lh' meaning left half of an eclipse (ingress)
@@ -2224,22 +2590,41 @@ def find_eclipses(times, signal, mode=1, max_n=80, tess_sectors=False, rf_classi
     Any of three possible sets of variables depending on the mode,
     the most complete one being:
     t_0: float
+        The epoch of the first eclipse
     period: float
+        The period of the eclipsing binary system
     score: float
+        The score expressing the likelihood of finding actual eclipses
     features: numpy.ndarray[float]
+        Features used in calculating the score
     sine_like: bool
+        Indicates if the eclipses are sine-like
     wide: bool
+        Indicates if the eclipses are wide relative to the period
     n_kernel: int
+        Averaging kernel width
     width_stats: numpy.ndarray[float]
+        Statistics about eclipse widths
     depth_stats: numpy.ndarray[float]
+        Statistics about eclipse depths
     ecl_mid: numpy.ndarray[float]
+        Midpoints of the eclipses
     widths: numpy.ndarray[float]
+        Widths of the eclipses
     depths: numpy.ndarray[float]
+        Depths of the eclipses
     ratios: numpy.ndarray[float]
+        Flat-bottom ratios of the eclipses
     added_snr: numpy.ndarray[float]
+        Signal-to-noise measure of the eclipses
     ecl_indices: numpy.ndarray[int]
+        Indices of the eclipses
     flags_lrf: numpy.ndarray[int]
+        Array of flags indicating eclipse types:
+        Full eclipse (0), Left half (1), Right half (2)
     flags_pst: numpy.ndarray[int]
+        Array of flags for each eclipse with a '1' for primary, '2' for secondary,
+        and '3' for rejected feature or potential tertiary.
 
     Notes
     -----

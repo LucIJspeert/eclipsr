@@ -16,9 +16,21 @@ import numba as nb
 
 @nb.njit(cache=True)
 def fold_time_series(times, period, zero):
-    """Fold the given time series over the orbital period to get a function of phase.
-    Returns the phase array for all timestamps using the provided reference zero point.
-    Returned phases are between -0.5 and 0.5
+    """Fold the given time series over the orbital period to get the phases
+
+    Parameters
+    ----------
+    times: numpy.ndarray[float]
+        Timestamps of the time series
+    period: float
+        Orbital period with which the time series is folded
+    zero: float
+        Reference zero point in time when the phase equals zero
+
+    Returns
+    -------
+    phases: numpy.ndarray[float]
+        Phase array for all timestamps. Phases are between -0.5 and 0.5
     """
     phases = ((times - zero) / period + 0.5) % 1 - 0.5
     return phases
@@ -28,12 +40,25 @@ def fold_time_series(times, period, zero):
 def runs_test(signal):
     """Bradley, (1968). Distribution-Free Statistical Tests, Chapter 12.
     To test a signal for its 'randomness'.
-    Outcome of 0 means as many zero crossings as expected from a random signal.
-    1 means there are more zero crossings than expected by 1 sigma (2 = 2 sigma etc.)
-    -1 means there are less zero crossings than expected by 1 sigma
-    So taking the absolute of the outcome gives the certainty level in sigma that the
-        input signal is not random.
-    [note: number of zero crossings = number of runs - 1
+
+    Parameters
+    ----------
+    signal : numpy.ndarray[float]
+        The input signal to be tested
+
+    Returns
+    -------
+    z: float
+        Outcome of the test:
+        - 0: As many zero crossings as expected from a random signal
+        - 1: More zero crossings than expected by 1 sigma (2 = 2 sigma etc.)
+        - -1: Less zero crossings than expected by 1 sigma
+        The absolute value represents the certainty level in sigma that
+        the input signal is not random.
+
+    Notes
+    -----
+    The number of zero crossings equals the number of runs minus one.
     See: https://www.itl.nist.gov/div898/handbook/eda/section3/eda35d.htm
     """
     signal_above = (signal > 0).astype(np.int_)
@@ -51,10 +76,24 @@ def runs_test(signal):
 
 @nb.njit(cache=True)
 def normalise_counts(flux_counts, flux_counts_err=None, i_sectors=None):
-    """Median-normalises flux (counts or otherwise, should be positive) by
-    dividing by the median (result varies around one and is still positive).
-    The result is positive and varies around one.
-    If i_sectors is given, the signal is processed per sector.
+    """Median-normalise the flux
+
+    Parameters
+    ----------
+    flux_counts : numpy.ndarray[float]
+        The flux to be normalised (counts or otherwise, should be positive)
+    flux_counts_err : numpy.ndarray[float], optional
+        The errors in the flux counts, if available
+    i_sectors : numpy.ndarray[int], optional
+        Indices representing sectors.
+        If provided, the signal is processed per sector.
+
+    Returns
+    -------
+    flux_norm : numpy.ndarray[float]
+        Normalised flux counts. The result is positive and varies around one.
+    flux_err_norm : numpy.ndarray[float], optional
+        Normalised errors in the flux counts, if flux_counts_err is provided.
     """
     if i_sectors is None:
         median = np.median(flux_counts)
@@ -76,38 +115,97 @@ def normalise_counts(flux_counts, flux_counts_err=None, i_sectors=None):
 @nb.njit(cache=True)
 def mn_to_ppm(mn_flux):
     """Converts median normalised flux to parts per million.
-    The result varies around zero, instead of one.
+
+    Parameters
+    ----------
+    mn_flux: numpy.ndarray[float]
+        Median normalised flux values. Assumed to vary around one.
+
+    Returns
+    -------
+    ppm_flux: numpy.ndarray[float]
+        Parts per million flux values. Varies around zero.
     """
-    return (mn_flux - 1) * 1e6
+    ppm_flux = (mn_flux - 1) * 1e6
+    return ppm_flux
 
 
 @nb.njit(cache=True)
 def ppm_to_mn(flux_ppm):
     """Converts from parts per million to median normalised flux.
-    It is assumed that the ppm is around zero. The result varies around one.
+
+    Parameters
+    ----------
+    flux_ppm : numpy.ndarray[float]
+        Parts per million flux values. Assumed to vary around zero.
+
+    Returns
+    -------
+    mn_flux : numpy.ndarray[float]
+        Median normalised flux values. Varies around one.
     """
-    return (flux_ppm / 1e6) + 1
+    mn_flux = (flux_ppm / 1e6) + 1
+    return mn_flux
 
 
 # @nb.njit(cache=True)  (slowed down by jit)
 def mn_to_mag(mn_flux):
-    """Converts from parts per million to magnitude (varying around zero)."""
-    return -2.5 * np.log10(mn_flux)
+    """Converts from parts per million to magnitude (relative).
+
+    Parameters
+    ----------
+    mn_flux: numpy.ndarray[float]
+        Median normalised flux values. Assumed to vary around one.
+
+    Returns
+    -------
+    mag: numpy.ndarray[float]
+        Relative magnitude values. Varies around zero.
+    """
+    mag = -2.5 * np.log10(mn_flux)
+    return mag
 
 
 @nb.njit(cache=True)  # (not sped up significantly by jit)
 def mag_to_mn(mag):
-    """Converts from magnitude (varying around zero) to median normalised flux."""
-    return ppm_to_mn(10**(-0.4 * mag))
+    """Converts from magnitude (varying around zero) to median normalised flux.
+
+    Parameters
+    ----------
+    mag: numpy.ndarray[float]
+        Magnitude values. Assumed to vary around zero.
+
+    Returns
+    -------
+    mn_flux: numpy.ndarray[float]
+        Median normalised flux values. Varies around one.
+    """
+    mn_flux = ppm_to_mn(10**(-0.4 * mag))
+    return mn_flux
 
 
 def get_tess_sectors(times, bjd_ref=2457000.0):
     """Load the times of the TESS sectors from a file and return a set of
     indices indicating the separate sectors in the time series.
+
+    Parameters
+    ----------
+    times: numpy.ndarray[float]
+        Timestamps of the time series
+    bjd_ref: float, optional
+        Barycentric Julian Date (BJD) reference date for the data.
+        Default is 2457000.0.
+
+    Returns
+    -------
+    i_sectors: numpy.ndarray[int]
+        Set of indices indicating the separate sectors in the time series.
+
+    Notes
+    -----
     Make sure to use the appropriate BJD reference date for your data.
     Handy link: https://archive.stsci.edu/tess/tess_drn.html
     """
-    # the 0.5 offset comes from test results, and the fact that no exact JD were found (just calendar days)
     script_dir = os.path.dirname(os.path.abspath(__file__))  # absolute dir the script is in
     data_dir = os.path.join(script_dir, 'data')
     jd_sectors = np.loadtxt(os.path.join(data_dir, 'tess_sectors.dat'), usecols=(2, 3)) - bjd_ref
@@ -121,10 +219,23 @@ def get_tess_sectors(times, bjd_ref=2457000.0):
 
 @nb.njit(cache=True)
 def remove_outliers(signal):
-    """Removes outliers in the signal that are more than 4 standard deviations
+    """Removes outliers in the signal
+
+    Parameters
+    ----------
+    signal: numpy.ndarray[float]
+        Median-normalized signal.
+
+    Returns
+    -------
+    numpy.ndarray[bool]
+        Boolean mask indicating outliers (as False)
+
+    Notes
+    -----
+    Removes outliers in the signal that are more than 4 standard deviations
     higher or lower than the median (=1, signal needs to be median normalised!),
     but only if both points adjacent to the anomaly are themselves not anomalous.
-    A boolean mask is returned with the outliers marked as false.
     """
     thr_mask = np.ones(len(signal), dtype=np.bool_)
     indices = np.arange(len(signal))
@@ -152,6 +263,22 @@ def rescale_tess(times, signal, i_sectors):
     times are in TESS bjd by default, but a different bjd_ref can be given to use
     a different time reference point.
     This rescaling will make sure the rest of eclipse finding goes as intended.
+
+    Parameters
+    ----------
+    times: numpy.ndarray[float]
+        Timestamps of the time series
+    signal: numpy.ndarray[float]
+        Measurement values of the time series
+    i_sectors: numpy.ndarray[int]
+        Indices indicating the separate sectors in the time series
+
+    Returns
+    -------
+    numpy.ndarray[float]
+        Rescaled signal
+    numpy.ndarray[bool]
+        Boolean mask indicating outliers
     """
     signal_copy = np.copy(signal)
     thr_mask = np.ones(len(times), dtype=np.bool_)
@@ -206,33 +333,68 @@ def rescale_tess(times, signal, i_sectors):
 
 def check_constant(signal):
     """Does a simple check to see if the signal is worth while processing further.
-    The signal must be median normalised.
+
+    Parameters
+    ----------
+    signal: numpy.ndarray[float]
+        Measurement values of the time series, must be median normalised
+
+    Returns
+    -------
+    not_constant: bool
+        True if the signal is deemed not constant
+
+    Notes
+    -----
     The 10th percentile of the signal centered around zero is compared to the
     10th percentile of the point-to-point differences.
     """
     low = 1 - np.percentile(signal, 10)
     low_diff = abs(np.percentile(np.diff(signal), 10))
-    return (low < low_diff)
+    not_constant = (low < low_diff)
+    return not_constant
 
 
 def ingest_signal(times, signal, signal_err=None, tess_sectors=True, quality=None):
     """Take a signal and process it for ingest into the algorithm.
-    
+
+    Parameters
+    ----------
+    times: numpy.ndarray[float]
+        Timestamps of the signal
+    signal: numpy.ndarray[float]
+        Measurement values of the signal
+    signal_err: numpy.ndarray[float], optional
+        Error values associated with the signal measurements
+    tess_sectors: bool, optional
+        Whether to handle each TESS sector separately
+    quality: numpy.ndarray[bool], optional
+        Boolean mask indicating the quality of data points
+
+    Returns
+    -------
+    times: numpy.ndarray[float]
+        Processed timestamps
+    signal: numpy.ndarray[float]
+        Processed signal measurements
+    signal_err: numpy.ndarray[float]
+        Processed error values associated with the signal measurements
+
+    Notes
+    -----
     The signal (raw counts or ppm) will be median normalised
     after the removal of non-finite values.
     [Note] signal must not be mean subtracted (or otherwise negative)!
     If your signal is already 'clean' and normalised to vary around 1,
     skip this function.
-    
+
     If tess_sectors is True, each sector is handled separately and
     the signal will be rescaled for more consistent eclipse depths across sectors.
     The separate sectors are also rescaled to better match in amplitude.
-    
+
     Boolean quality flags can be provided as a mask for the light curve
     (Data points with True are kept).
     The light curve is also sorted before further processing.
-    
-    Outputs the processed times and signal.
     """
     if signal_err is None:
         signal_err = np.ones(len(times))
@@ -283,7 +445,37 @@ def ingest_signal(times, signal, signal_err=None, tess_sectors=True, quality=Non
 
 def save_results(results, file_name, identifier='none'):
     """Save the full output of the find_eclipses function to an hdf5 file.
-    Give an identifier to be used in the file name.
+
+    Parameters
+    ----------
+    results: tuple
+        A tuple containing the results from the `find_eclipses` function.
+        The tuple should contain:
+            - t_0: float
+            - period: float
+            - score: float
+            - features: numpy.ndarray[float]
+            - sine_like: bool
+            - wide: bool
+            - n_kernel: int
+            - width_stats: numpy.ndarray[float]
+            - depth_stats: numpy.ndarray[float]
+            - ecl_mid: numpy.ndarray[float]
+            - widths: numpy.ndarray[float]
+            - depths: numpy.ndarray[float]
+            - ratios: numpy.ndarray[float]
+            - added_snr: numpy.ndarray[float]
+            - ecl_indices: numpy.ndarray[int]
+            - flags_lrf: numpy.ndarray[int]
+            - flags_pst: numpy.ndarray[int]
+    file_name: str
+        The name of the HDF5 file to save the results to
+    identifier: str, optional
+        An identifier to be inserted into the hdf5 file
+
+    Returns
+    -------
+    None
     """
     # unpack all the variables
     t_0, period, score, features, sine_like, wide, n_kernel, width_stats, depth_stats, \
@@ -312,12 +504,22 @@ def save_results(results, file_name, identifier='none'):
         file.create_dataset('ecl_indices', data=ecl_indices)
         file.create_dataset('flags_lrf', data=flags_lrf)
         file.create_dataset('flags_pst', data=flags_pst)
-    return
+    return None
 
 
 def load_results(file_name):
     """Load the full output of the find_eclipses function from the hdf5 file.
-    returns an h5py file object, which has to be closed by the user (file.close()).
+
+    Parameters
+    ----------
+    file_name: str
+        The name of the HDF5 file containing the results
+
+    Returns
+    -------
+    file: h5py.File
+        An HDF5 file object containing the results.
+        Has to be closed by the user (file.close())
     """
     file = h5py.File(file_name, 'r')
     return file
@@ -325,7 +527,40 @@ def load_results(file_name):
 
 def read_results(file_name, verbose=False):
     """Read the full output of the find_eclipses function from the hdf5 file.
-    This returns the set of variables as they appear in eclipsr and closes the file.
+
+    Parameters
+    ----------
+    file_name: str
+        The name of the HDF5 file to read the results from
+    verbose: bool, optional
+        If True, prints information about the opened file
+
+    Returns
+    -------
+    tuple
+        A tuple containing the variables as they appear in eclipsr:
+            - t_0: float
+            - period: float
+            - score: float
+            - features: numpy.ndarray[float]
+            - sine_like: bool
+            - wide: bool
+            - n_kernel: int
+            - width_stats: numpy.ndarray[float]
+            - depth_stats: numpy.ndarray[float]
+            - ecl_mid: numpy.ndarray[float]
+            - widths: numpy.ndarray[float]
+            - depths: numpy.ndarray[float]
+            - ratios: numpy.ndarray[float]
+            - added_snr: numpy.ndarray[float]
+            - ecl_indices: numpy.ndarray[int]
+            - flags_lrf: numpy.ndarray[int]
+            - flags_pst: numpy.ndarray[int]
+
+    Notes
+    -----
+    Returns the set of variables as they appear in eclipsr and closes the file.
+    This function closes the HDF5 file after reading.
     """
     # check some input
     if not file_name.endswith('.hdf5'):

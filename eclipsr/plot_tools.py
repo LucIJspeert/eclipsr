@@ -14,7 +14,33 @@ from . import utility as ut
 
 
 def rescale_tess_dplot(times, signal, signal_copy, averages, low, high, threshold, mask_sect, jd_sectors):
-    """Diagnostic plot for rescale_tess."""
+    """Diagnostic plot for rescale_tess.
+
+    Parameters
+    ----------
+    times: numpy.ndarray[float]
+        Timestamps of the time series
+    signal: numpy.ndarray[float]
+        Measurement values of the time series
+    signal_copy: numpy.ndarray[float]
+        Copy of the signal after rescaling
+    averages: numpy.ndarray[float]
+        Averages of the signal in each sector
+    low: numpy.ndarray[float]
+        Lower representative levels in each sector
+    high: numpy.ndarray[float]
+        Upper representative levels in each sector
+    threshold: numpy.ndarray[float]
+        Thresholds for signal normalization in each sector
+    mask_sect: numpy.ndarray[bool]
+        Mask indicating the sectors to plot
+    jd_sectors: numpy.ndarray[float]
+        Start and end times of each sector
+
+    Returns
+    -------
+    None
+    """
     fig, ax = plt.subplots(nrows=2, ncols=1, sharex=True, figsize=[14, 10])
     ax[0].plot(times, signal)
     ax[1].plot(times, signal_copy)
@@ -33,11 +59,29 @@ def rescale_tess_dplot(times, signal, signal_copy, averages, low, high, threshol
     plt.tight_layout()
     plt.subplots_adjust(hspace=0)
     plt.show()
-    return
+    return None
 
 
 def find_best_n_dplot(n_range, deviation, optimize, sine_like, best_n):
-    """Diagnostic plot for find_best_n."""
+    """Diagnostic plot for find_best_n.
+
+    Parameters
+    ----------
+    n_range: numpy.ndarray[float]
+        Range of values for the kernel width
+    deviation: numpy.ndarray[float]
+        Deviation statistics
+    optimize: numpy.ndarray[float]
+        Optimization statistics
+    sine_like: numpy.ndarray[float]
+        Sine-like statistics
+    best_n: int
+        Best kernel width
+
+    Returns
+    -------
+    None
+    """
     fig, ax = plt.subplots(figsize=[14, 10])
     ax.plot(n_range[[0, -1]], [2.5, 2.5])
     ax.plot(n_range, deviation, label='deviation')
@@ -48,11 +92,37 @@ def find_best_n_dplot(n_range, deviation, optimize, sine_like, best_n):
     plt.tight_layout()
     plt.legend(title=f'n={best_n}')
     plt.show()
-    return
+    return None
 
 
 def plot_marker_diagnostics(times, signal, signal_s, s_derivs, peaks, ecl_indices, flags_lrf, n_kernel):
-    """Plot the signal and derivatives with the eclipse points marked."""
+    """Plot the signal and derivatives with the eclipse points marked.
+
+    Parameters
+    ----------
+    times: numpy.ndarray[float]
+        Timestamps of the time series
+    signal: numpy.ndarray[float]
+        Measurement values of the time series
+    signal_s: numpy.ndarray[float]
+        Smoothed measurement values of the time series
+    s_derivs: numpy.ndarray[float]
+        Smoothed derivatives of the time series
+    peaks: tuple
+        A tuple containing different types of peaks in the time series
+    ecl_indices: numpy.ndarray[int]
+        Array of eclipse indices, each representing
+        ingress top, ingress bottom, egress bottom, and egress top.
+    flags_lrf: numpy.ndarray[int]
+        Array of flags indicating eclipse types:
+        Full eclipse (0), Left half (1), Right half (2)
+    n_kernel: int
+        Averaging kernel width
+
+    Returns
+    -------
+    None
+    """
     deriv_1s, deriv_2s, deriv_3s, deriv_13s = s_derivs
     peaks_1, peaks_2_neg, peaks_2_pos, peaks_edge, peaks_bot, peaks_3, peaks_13 = peaks
     plot_height = np.max(signal) + 0.02 * (np.max(signal) - np.min(signal))
@@ -96,11 +166,42 @@ def plot_marker_diagnostics(times, signal, signal_s, s_derivs, peaks, ecl_indice
     plt.tight_layout()
     plt.subplots_adjust(hspace=0)
     plt.show()
-    return
+    return None
 
 
 def plot_period_diagnostics(times, signal, signal_s, ecl_indices, ecl_mid, widths, depths, flags_lrf, flags_pst, period):
-    """Plot the signal, mark primary and secondary eclipses and plot the period."""
+    """Plot the signal, mark primary and secondary eclipses and plot the period.
+
+    Parameters
+    ----------
+    times: numpy.ndarray[float]
+        Timestamps of the time series
+    signal: numpy.ndarray[float]
+        Measurement values of the time series
+    signal_s: numpy.ndarray[float]
+        Smoothed measurement values of the time series
+    ecl_indices: numpy.ndarray[int]
+        Array of eclipse indices, each representing
+        ingress top, ingress bottom, egress bottom, and egress top.
+    ecl_mid: numpy.ndarray[float]
+        Midpoints of eclipses
+    widths: numpy.ndarray[float]
+        Widths of the eclipses
+    depths: numpy.ndarray[float]
+        Depths of the eclipses
+    flags_lrf: numpy.ndarray[int]
+        Array of flags indicating eclipse types:
+        Full eclipse (0), Left half (1), Right half (2)
+    flags_pst: numpy.ndarray[int]
+        Array of flags for each eclipse with a '1' for primary, '2' for secondary,
+        and '3' for rejected feature or potential tertiary.
+    period: float
+        Orbital period in days
+
+    Returns
+    -------
+    None
+    """
     full = (flags_lrf == 0)
     prim = (flags_pst == 1)
     sec = (flags_pst == 2)
@@ -163,4 +264,4 @@ def plot_period_diagnostics(times, signal, signal_s, ecl_indices, ecl_mid, width
     plt.tight_layout()
     plt.subplots_adjust(hspace=0)
     plt.show()
-    return
+    return None

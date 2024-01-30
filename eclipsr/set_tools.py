@@ -70,7 +70,7 @@ def ephem_from_file(file_name, delimiter=None):
         Output of the function find_eclipses (mode=1)
     """
     times, signal = np.loadtxt(file_name, delimiter=delimiter, unpack=True)
-    times, signal = ut.ingest_signal(times, signal + 1, tess_sectors=False)
+    times, signal, signal_err = ut.ingest_signal(times, signal + 1, tess_sectors=False)
     try:
         result = ecf.find_eclipses(times, signal, mode=1, max_n=80, tess_sectors=False)
     except:
@@ -108,7 +108,7 @@ def analyse_lc_from_file(file_name, delimiter=None, mode=2, max_n=80, tess_secto
         Output of the function find_eclipses (mode=2)
     """
     times, signal = np.loadtxt(file_name, delimiter=delimiter, unpack=True)
-    times, signal = ut.ingest_signal(times, signal + 1, tess_sectors=False)
+    times, signal, signal_err = ut.ingest_signal(times, signal + 1, tess_sectors=False)
     
     source_id = os.path.basename(file_name)
     
@@ -174,7 +174,7 @@ def analyse_lc_from_tic(tic, all_tic=None, all_files=None, mode=2, max_n=80, sav
         qual_flags = np.append(qual_flags, tess_data['QUALITY'])
     
     quality = (qual_flags == 0)
-    times, signal = ut.ingest_signal(times, signal, tess_sectors=True, quality=quality)
+    times, signal, signal_err = ut.ingest_signal(times, signal, tess_sectors=True, quality=quality)
     
     if (len(times) < 10):
         result = empty_result
@@ -212,6 +212,9 @@ def analyse_set(target_list, function='analyse_lc_from_tic', n_threads=os.cpu_co
     results: list
         Output of the function for all targets
     """
+    print('not yet')
+    fct.partial(eval(function), **kwargs)
+    print('worked')
     t1 = time.time()
     with mp.Pool(processes=n_threads) as pool:
         results = pool.map(fct.partial(eval(function), **kwargs), target_list)

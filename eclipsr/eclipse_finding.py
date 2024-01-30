@@ -2319,16 +2319,16 @@ def find_eclipses(times, signal, mode=1, max_n=80, tess_sectors=False, rf_classi
             features = eclipse_score_attr(times, signal_s, r_derivs[0], period, ecl_indices, ecl_mid,
                                           added_snr, widths, depths, flags_lrf, flags_pst)
             score = features[0]
-            features = features[1:]
+            features = np.array(features[1:])
             rfc_file = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'data', 'random_forrest.dump')
             rfc = joblib.load(rfc_file)
-            score = rfc.predict(np.array(attrs[1:])[np.newaxis])
+            score = rfc.predict(features[np.newaxis])
         else:
             # legacy mode with the manually designed eclipse score
             features = eclipse_score_attr(times, signal_s, r_derivs[0], period, ecl_indices, ecl_mid,
                                           added_snr, widths, depths, flags_lrf, flags_pst)
             score = features[0]
-            features = features[1:]
+            features = np.array(features[1:])
 
     elif (len(flags_lrf) != 0):
         # take some measurements

@@ -14,7 +14,10 @@ import time
 import functools as fct
 import numpy as np
 import multiprocessing as mp
-import astropy.io.fits as fits
+try:
+    import astropy.io.fits as fits  # optional functionality
+except ImportError:
+    fits = None
 
 from . import eclipse_finding as ecf
 from . import utility as ut

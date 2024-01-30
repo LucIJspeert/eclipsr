@@ -7,7 +7,7 @@ from setuptools import setup, find_packages
 # package version
 MAJOR = 1
 MINOR = 1
-ATTR = '1a'
+ATTR = '1b'
 
 setup(name="eclipsr",
       version=f'{MAJOR}.{MINOR}.{ATTR}',

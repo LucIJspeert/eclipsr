@@ -286,7 +286,7 @@ def save_results(results, file_name, identifier='none'):
     Give an identifier to be used in the file name.
     """
     # unpack all the variables
-    t_0, period, score, sine_like, wide, n_kernel, width_stats, depth_stats, \
+    t_0, period, score, features, sine_like, wide, n_kernel, width_stats, depth_stats, \
         ecl_mid, widths, depths, ratios, added_snr, ecl_indices, flags_lrf, flags_pst = results
     # check some input
     if not file_name.endswith('.hdf5'):
@@ -298,6 +298,7 @@ def save_results(results, file_name, identifier='none'):
         file.attrs['t_0'] = t_0
         file.attrs['period'] = period
         file.attrs['score'] = score
+        file.attrs['features'] = features
         file.attrs['sine_like'] = sine_like
         file.attrs['wide'] = wide
         file.attrs['n_kernel'] = n_kernel
@@ -335,6 +336,10 @@ def read_results(file_name, verbose=False):
             score = file.attrs['score']
         except KeyError:
             score = file.attrs['confidence']  # for backward compatibility
+        try:
+            features = file.attrs['features']
+        except KeyError:
+            features = np.zeros(6)  # for backward compatibility
         sine_like = file.attrs['sine_like']
         wide = file.attrs['wide']
         n_kernel = file.attrs['n_kernel']
@@ -351,5 +356,5 @@ def read_results(file_name, verbose=False):
     
     if verbose:
         print(f'Opened eclipsr file with identifier: {identifier}, created on {date_time}')
-    return t_0, period, score, sine_like, wide, n_kernel, width_stats, depth_stats, \
+    return t_0, period, score, features, sine_like, wide, n_kernel, width_stats, depth_stats, \
         ecl_mid, widths, depths, ratios, added_snr, ecl_indices, flags_lrf, flags_pst

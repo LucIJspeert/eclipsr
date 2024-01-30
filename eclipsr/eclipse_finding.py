@@ -2226,6 +2226,7 @@ def find_eclipses(times, signal, mode=1, max_n=80, tess_sectors=False, rf_classi
     t_0: float
     period: float
     score: float
+    features: numpy.ndarray[float]
     sine_like: bool
     wide: bool
     n_kernel: int
@@ -2252,7 +2253,7 @@ def find_eclipses(times, signal, mode=1, max_n=80, tess_sectors=False, rf_classi
     0: Only find and return the individual eclipses without looking for a period
     1: Only find and return the ephemeris (t_0, period), eclipse score and collective
         statistics about the eclipse widths and depths (mean and standard deviation)
-    2: Find and return the t_0, period, eclipse score and individual eclipse
+    2: Find and return the t_0, period, eclipse score, score features and individual eclipse
         midpoints, widths, depths, bottom ratios, added_snr, the eclipse indices,
         plus the l/r/f and p/s/t flags_lrf (=everything)
     -1: Turn on diagnostic plots and return everything
@@ -2315,16 +2316,19 @@ def find_eclipses(times, signal, mode=1, max_n=80, tess_sectors=False, rf_classi
                                        flags_lrf, flags_pst, period)
         # determine the eclipse score
         if rf_classifier:
-            attrs = eclipse_score_attr(times, signal_s, r_derivs[0], period, ecl_indices, ecl_mid,
-                                       added_snr, widths, depths, flags_lrf, flags_pst)
-            score, attr_0, attr_1, attr_2, attr_3, attr_4, penalty = attrs
+            features = eclipse_score_attr(times, signal_s, r_derivs[0], period, ecl_indices, ecl_mid,
+                                          added_snr, widths, depths, flags_lrf, flags_pst)
+            score = features[0]
+            features = features[1:]
             rfc_file = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'data', 'random_forrest.dump')
             rfc = joblib.load(rfc_file)
             score = rfc.predict(np.array(attrs[1:])[np.newaxis])
         else:
             # legacy mode with the manually designed eclipse score
-            score = eclipse_score(times, signal_s, r_derivs[0], period, ecl_indices, ecl_mid,
-                                  added_snr, widths, depths, flags_lrf, flags_pst)
+            features = eclipse_score_attr(times, signal_s, r_derivs[0], period, ecl_indices, ecl_mid,
+                                          added_snr, widths, depths, flags_lrf, flags_pst)
+            score = features[0]
+            features = features[1:]
 
     elif (len(flags_lrf) != 0):
         # take some measurements
@@ -2342,7 +2346,7 @@ def find_eclipses(times, signal, mode=1, max_n=80, tess_sectors=False, rf_classi
         return sine_like, n_kernel, ecl_mid, widths, depths, ratios, added_snr, ecl_indices, flags_lrf
     elif (mode in [2, -1]):
         # return everything
-        return t_0, period, score, sine_like, wide, n_kernel, width_stats, depth_stats, \
+        return t_0, period, score, features, sine_like, wide, n_kernel, width_stats, depth_stats, \
                ecl_mid, widths, depths, ratios, added_snr, ecl_indices, flags_lrf, flags_pst
     else:
         # mode == 1 or anything not noted above

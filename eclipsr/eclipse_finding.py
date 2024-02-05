@@ -2718,9 +2718,11 @@ def find_eclipses(times, signal, mode=1, max_n=80, tess_sectors=False, rf_classi
     elif (len(flags_lrf) != 0):
         # take some measurements
         ecl_mid, widths, depths, ratios = measure_eclipses(times, signal_s, ecl_indices, flags_lrf)
+        features = -1 * np.ones(6)
         t_0, period, flags_pst, score, wide = -1, -1, np.array([], dtype=np.int32), -1, False
     else:
         ecl_mid, widths, depths, ratios = np.array([[], [], [], []])
+        features = -1 * np.ones(6)
         t_0, period, flags_pst, score, wide = -1, -1, np.array([], dtype=np.int32), -1, False
     # check if the width/depth statistics (collective characteristics) need to be calculated
     if (mode != 0):

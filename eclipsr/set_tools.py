@@ -69,17 +69,26 @@ def ephem_from_file(file_name, delimiter=None):
     result: tuple
         Output of the function find_eclipses (mode=1)
     """
-    times, signal = np.loadtxt(file_name, delimiter=delimiter, unpack=True)
-    times, signal, signal_err = ut.ingest_signal(times, signal + 1, tess_sectors=False)
+    data = np.loadtxt(file_name, delimiter=delimiter, unpack=True)
+    # check number of columns present
+    if (len(data) == 2):
+        times, signal = data
+        signal_err = np.ones(len(times))
+    else:
+        times, signal, signal_err = data
+    # process the signal
+    if np.any(signal < 0):
+        signal += 1  # assume the signal varies around 0 instead of 1
+    times, signal, signal_err = ut.ingest_signal(times, signal + 1, signal_err, tess_sectors=False)
     try:
         result = ecf.find_eclipses(times, signal, mode=1, max_n=80, tess_sectors=False)
     except:
-        print(f'an error happened in the following file: {file_name}')
+        print(f'an error occurred with the following file: {file_name}')
         result = []
     return result
 
 
-def analyse_lc_from_file(file_name, delimiter=None, mode=2, max_n=80, tess_sectors=False, save_dir=None):
+def analyse_lc_from_file(file_name, delimiter=None, mode=2, save_dir=None, **kwargs):
     """Do all steps of the algorithm for a given light curve file
 
     Parameters
@@ -93,29 +102,35 @@ def analyse_lc_from_file(file_name, delimiter=None, mode=2, max_n=80, tess_secto
     mode: int
         Mode of operation: 0, 1, 2 or -1
         See notes for explanation of the modes.
-    max_n: int
-        Maximum smoothing kernel width in data points
-    tess_sectors: bool
-        Whether to use TESS sectors to divide up the time series
-        or to see it as one continuous piece.
     save_dir: str
         Path to a directory for saving the results. Also used to load
         previous analysis results.
+    kwargs: optional
+        Keyword arguments to be passed on to find_eclipses
 
     Returns
     -------
     result: tuple
         Output of the function find_eclipses (mode=2)
     """
-    times, signal = np.loadtxt(file_name, delimiter=delimiter, unpack=True)
-    times, signal, signal_err = ut.ingest_signal(times, signal + 1, tess_sectors=False)
-    
+    data = np.loadtxt(file_name, delimiter=delimiter, unpack=True)
+    # check number of columns present
+    if (len(data) == 2):
+        times, signal = data
+        signal_err = np.ones(len(times))
+    else:
+        times, signal, signal_err = data
+    # process the signal
+    if np.any(signal < 0):
+        signal += 1  # assume the signal varies around 0 instead of 1
+    times, signal, signal_err = ut.ingest_signal(times, signal, signal_err, tess_sectors=False)
+    # automatically pick an identifier for the save file
     source_id = os.path.basename(file_name)
-    
+    # catch any errors that might disrupt the execution
     try:
-        result = ecf.find_eclipses(times, signal, mode=mode, max_n=max_n, tess_sectors=tess_sectors)
+        result = ecf.find_eclipses(times, signal, mode=mode, **kwargs)
     except:
-        print(f'an error happened in the following file: {file_name}')
+        print(f'An error occurred with the following file: {file_name}')
         result = empty_result
     
     if save_dir is not None:
@@ -123,7 +138,7 @@ def analyse_lc_from_file(file_name, delimiter=None, mode=2, max_n=80, tess_secto
     return result
 
 
-def analyse_lc_from_tic(tic, all_tic=None, all_files=None, mode=2, max_n=80, save_dir=None):
+def analyse_lc_from_tic(tic, all_tic=None, all_files=None, mode=2, save_dir=None, **kwargs):
     """Do all steps of the algorithm for a given TIC number
 
     Parameters
@@ -140,11 +155,11 @@ def analyse_lc_from_tic(tic, all_tic=None, all_files=None, mode=2, max_n=80, sav
     mode: int
         Mode of operation: 0, 1, 2 or -1
         See notes for explanation of the modes.
-    max_n: int
-        Maximum smoothing kernel width in data points
     save_dir: str
         Path to a directory for saving the results. Also used to load
         previous analysis results.
+    kwargs: optional
+        Keyword arguments to be passed on to find_eclipses
 
     Returns
     -------
@@ -175,12 +190,12 @@ def analyse_lc_from_tic(tic, all_tic=None, all_files=None, mode=2, max_n=80, sav
     
     quality = (qual_flags == 0)
     times, signal, signal_err = ut.ingest_signal(times, signal, tess_sectors=True, quality=quality)
-    
+    # catch any errors that might disrupt the execution
     if (len(times) < 10):
         result = empty_result
     else:
         try:
-            result = ecf.find_eclipses(times, signal, mode=mode, max_n=max_n, tess_sectors=True)
+            result = ecf.find_eclipses(times, signal, mode=mode, tess_sectors=True, **kwargs)
         except:
             print(f'an error happened in the following tic: {tic}')
             result = empty_result
@@ -211,6 +226,10 @@ def analyse_set(target_list, function='analyse_lc_from_tic', n_threads=os.cpu_co
     -------
     results: list
         Output of the function for all targets
+
+    Notes
+    -----
+    kwargs are passed on to the chosen function
     """
     print('not yet')
     fct.partial(eval(function), **kwargs)

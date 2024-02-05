@@ -105,7 +105,7 @@ def analyse_lc_from_file(file_name, delimiter=None, mode=2, save_dir=None, **kwa
     save_dir: str
         Path to a directory for saving the results. Also used to load
         previous analysis results.
-    kwargs: optional
+    **kwargs: dict, optional
         Keyword arguments to be passed on to find_eclipses
 
     Returns
@@ -158,7 +158,7 @@ def analyse_lc_from_tic(tic, all_tic=None, all_files=None, mode=2, save_dir=None
     save_dir: str
         Path to a directory for saving the results. Also used to load
         previous analysis results.
-    kwargs: optional
+    **kwargs: dict, optional
         Keyword arguments to be passed on to find_eclipses
 
     Returns
@@ -218,7 +218,7 @@ def analyse_set(target_list, function='analyse_lc_from_tic', n_threads=os.cpu_co
     n_threads: int
         Number of threads to use.
         Uses two fewer than the available amount by default.
-    **kwargs: dict
+    **kwargs: dict, optional
         Extra arguments to 'function': refer to each function's
         documentation for a list of all possible arguments.
 
@@ -226,14 +226,8 @@ def analyse_set(target_list, function='analyse_lc_from_tic', n_threads=os.cpu_co
     -------
     results: list
         Output of the function for all targets
-
-    Notes
-    -----
-    kwargs are passed on to the chosen function
     """
-    print('not yet')
     fct.partial(eval(function), **kwargs)
-    print('worked')
     t1 = time.time()
     with mp.Pool(processes=n_threads) as pool:
         results = pool.map(fct.partial(eval(function), **kwargs), target_list)

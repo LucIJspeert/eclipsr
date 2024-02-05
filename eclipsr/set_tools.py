@@ -21,7 +21,7 @@ from . import utility as ut
 
 
 # globals
-empty_result = (-1, -1, -1, False, False, 1, np.array([[-1., -1.], [-1., -1.]]), np.array([[-1., -1.], [-1., -1.]]),
+empty_result = (-1, -1, -1, -1 * np.ones(6), False, False, 1, -1 * np.ones((2, 2)), -1 * np.ones((2, 2)),
                 np.array([]), np.array([]), np.array([]), np.array([]), np.array([]),
                 np.zeros((0, 4), dtype=np.int64), np.array([], dtype=np.int64),
                 np.array([], dtype=np.int32))

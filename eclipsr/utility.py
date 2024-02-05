@@ -443,7 +443,7 @@ def ingest_signal(times, signal, signal_err=None, tess_sectors=True, quality=Non
     return times, signal, signal_err
 
 
-def save_results(results, file_name, identifier='none'):
+def save_results(results, file_name, identifier='none', overwrite=False):
     """Save the full output of the find_eclipses function to an hdf5 file.
 
     Parameters
@@ -472,6 +472,8 @@ def save_results(results, file_name, identifier='none'):
         The name of the HDF5 file to save the results to
     identifier: str, optional
         An identifier to be inserted into the hdf5 file
+    overwrite: bool
+        Whether to respect an existing file or overwrite it
 
     Returns
     -------
@@ -484,7 +486,10 @@ def save_results(results, file_name, identifier='none'):
     if not file_name.endswith('.hdf5'):
         file_name += '.hdf5'
     # create the file
-    with h5py.File(file_name, 'w-') as file:
+    mode = 'w-'
+    if overwrite:
+        mode = 'w'
+    with h5py.File(file_name, mode) as file:
         file.attrs['identifier'] = identifier
         file.attrs['date_time'] = str(datetime.datetime.now())
         file.attrs['t_0'] = t_0

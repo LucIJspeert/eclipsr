@@ -88,7 +88,7 @@ def ephem_from_file(file_name, delimiter=None):
     return result
 
 
-def analyse_lc_from_file(file_name, delimiter=None, mode=2, save_dir=None, **kwargs):
+def analyse_lc_from_file(file_name, delimiter=None, mode=2, save_dir=None, overwrite=False, **kwargs):
     """Do all steps of the algorithm for a given light curve file
 
     Parameters
@@ -105,6 +105,8 @@ def analyse_lc_from_file(file_name, delimiter=None, mode=2, save_dir=None, **kwa
     save_dir: str
         Path to a directory for saving the results. Also used to load
         previous analysis results.
+    overwrite: bool
+        Whether to respect an existing file or overwrite it
     **kwargs: dict, optional
         Keyword arguments to be passed on to find_eclipses
 
@@ -134,11 +136,12 @@ def analyse_lc_from_file(file_name, delimiter=None, mode=2, save_dir=None, **kwa
         result = empty_result
     
     if save_dir is not None:
-        ut.save_results(result, os.path.join(save_dir, f'{source_id}_eclipsr'), identifier=source_id)
+        save_name = os.path.join(save_dir, f'{source_id}_eclipsr')
+        ut.save_results(result, save_name, identifier=source_id, overwrite=overwrite)
     return result
 
 
-def analyse_lc_from_tic(tic, all_tic=None, all_files=None, mode=2, save_dir=None, **kwargs):
+def analyse_lc_from_tic(tic, all_tic=None, all_files=None, mode=2, save_dir=None, overwrite=False, **kwargs):
     """Do all steps of the algorithm for a given TIC number
 
     Parameters
@@ -158,6 +161,8 @@ def analyse_lc_from_tic(tic, all_tic=None, all_files=None, mode=2, save_dir=None
     save_dir: str
         Path to a directory for saving the results. Also used to load
         previous analysis results.
+    overwrite: bool
+        Whether to respect an existing file or overwrite it
     **kwargs: dict, optional
         Keyword arguments to be passed on to find_eclipses
 
@@ -201,7 +206,8 @@ def analyse_lc_from_tic(tic, all_tic=None, all_files=None, mode=2, save_dir=None
             result = empty_result
     
     if save_dir is not None:
-        ut.save_results(result, os.path.join(save_dir, f'{tic}_eclipsr'), identifier=tic)
+        save_name = os.path.join(save_dir, f'{tic}_eclipsr')
+        ut.save_results(result, save_name, identifier=tic, overwrite=overwrite)
     return result
 
 

@@ -3,9 +3,30 @@
 This module contains functions to analyse (large) sets of light curves
 using parallelisation.
 
-[note] this module is a work in progress, it is recommended to understand and
-modify this code to fit your needs before using it.
+-------
+Example
 
+The function analyse_set may be used to analyse large numbers of targets in parallel
+If TESS data products are used (in the form of fits files containing light curves),
+the function 'analyse_lc_from_tic' provides a convenient option. One then gives the
+list of TIC numbers as well as a list of all file paths and their associated TIC
+numbers.
+
+>>> import eclipsr as ecl
+>>> # The keyword arguments will be sent to analyse_lc_from_tic
+>>> target_list = [1234567, 12345678, 23456789]
+>>> all_tic =     [1234567, 12345678, 23456789, 23456789, 23456789]
+>>> all_files = ['path/to/file/tic01234567.fits', 'path/to/file/tic12345678.fits', 'path/to/file/tic23456789_s1.fits',
+>>>              'path/to/file/tic23456789_s2.fits', 'path/to/file/tic23456789_s3.fits']
+>>> kwargs = {'all_tic': all_tic, 'all_files': all_files, 'mode': 2, 'save_dir': None, 'overwrite': False}
+>>> # additional keywords may be provided for 'find_eclipses'
+>>> results = ecl.analyse_set(target_list, function='analyse_lc_from_tic', n_threads=os.cpu_count()-2, **kwargs)
+
+If we have reduced light curve files (text files with column time stamps and flux),
+we may use 'analyse_lc_from_file', and provide the file names for each light curve
+directly in the 'target_list'.
+
+-----------------------------
 Code written by: Luc IJspeert
 """
 

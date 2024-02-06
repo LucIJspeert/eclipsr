@@ -150,7 +150,7 @@ def ppm_to_mn(flux_ppm):
 
 # @nb.njit(cache=True)  (slowed down by jit)
 def mn_to_mag(mn_flux):
-    """Converts from parts per million to magnitude (relative).
+    """Converts from median normalised flux to magnitude (relative).
 
     Parameters
     ----------

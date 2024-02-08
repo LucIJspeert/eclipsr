@@ -62,7 +62,7 @@ def get_fits_data(file_name, index=0):
 
     Returns
     -------
-    data: numpy.ndarray[float]
+    data: astropy.io.fits.fitsrec.FITS_rec[float], None
         The data portion of the fits file
     """
     if ((file_name[-5:] != '.fits') & (file_name[-4:] != '.fit')):
@@ -136,6 +136,12 @@ def analyse_lc_from_file(file_name, delimiter=None, mode=2, save_dir=None, overw
     result: tuple
         Output of the function find_eclipses (mode=2)
     """
+    # check that the file exists
+    if not os.path.isfile(file_name):
+        print(f'File does not exist: {file_name}')
+        result = empty_result
+        return result
+
     data = np.loadtxt(file_name, delimiter=delimiter, unpack=True)
     # check number of columns present
     if (len(data) == 2):
@@ -197,11 +203,20 @@ def analyse_lc_from_tic(tic, all_tic=None, all_files=None, mode=2, save_dir=None
     else:
         # assume all files are relevant
         tic_files = all_files
+    # check that at least one file exists
+    if not np.any([os.path.isfile(file) for file in tic_files]):
+        print(f'Files do not exist for: {tic}')
+        result = empty_result
+        return result
 
     times = np.array([])
     signal = np.array([])
     qual_flags = np.array([])
     for file in tic_files:
+        # check that the file exists
+        if not os.path.isfile(file):
+            continue
+        # load in the times and flux
         tess_data = get_fits_data(file, 1)
         times = np.append(times, tess_data['TIME'])
         if ('PDCSAP_FLUX' in tess_data.columns.names):

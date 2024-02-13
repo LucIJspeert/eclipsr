@@ -152,7 +152,12 @@ def analyse_lc_from_file(file_name, delimiter=None, mode=2, save_dir=None, overw
     # process the signal
     if np.any(signal < 0):
         signal += 1  # assume the signal varies around 0 instead of 1
-    times, signal, signal_err = ut.ingest_signal(times, signal, signal_err, tess_sectors=False)
+    try:
+        times, signal, signal_err = ut.ingest_signal(times, signal, signal_err, tess_sectors=False)
+    except AssertionError:
+        result = empty_result
+        return result
+
     # automatically pick an identifier for the save file
     source_id = os.path.basename(file_name)
     # catch any errors that might disrupt the execution
@@ -230,7 +235,12 @@ def analyse_lc_from_tic(tic, all_tic=None, all_files=None, mode=2, save_dir=None
         qual_flags = np.append(qual_flags, tess_data['QUALITY'])
     
     quality = (qual_flags == 0)
-    times, signal, signal_err = ut.ingest_signal(times, signal, tess_sectors=True, quality=quality)
+    try:
+        times, signal, signal_err = ut.ingest_signal(times, signal, tess_sectors=True, quality=quality)
+    except AssertionError:
+        result = empty_result
+        return result
+
     # catch any errors that might disrupt the execution
     if (len(times) < 10):
         result = empty_result

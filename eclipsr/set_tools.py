@@ -155,8 +155,7 @@ def analyse_lc_from_file(file_name, delimiter=None, mode=2, save_dir=None, overw
     try:
         times, signal, signal_err = ut.ingest_signal(times, signal, signal_err, tess_sectors=False)
     except AssertionError:
-        result = empty_result
-        return result
+        times, signal, signal_err = np.array([[], [], []])
 
     # automatically pick an identifier for the save file
     source_id = os.path.basename(file_name)
@@ -210,7 +209,7 @@ def analyse_lc_from_tic(tic, all_tic=None, all_files=None, mode=2, save_dir=None
         tic_files = all_files
     # check that at least one file exists
     if not np.any([os.path.isfile(file) for file in tic_files]):
-        print(f'Files do not exist for: {tic}')
+        print(f'All {len(tic_files)} files do not exist for: {tic}')
         result = empty_result
         return result
 
@@ -238,8 +237,7 @@ def analyse_lc_from_tic(tic, all_tic=None, all_files=None, mode=2, save_dir=None
     try:
         times, signal, signal_err = ut.ingest_signal(times, signal, tess_sectors=True, quality=quality)
     except AssertionError:
-        result = empty_result
-        return result
+        times, signal, signal_err = np.array([[], [], []])
 
     # catch any errors that might disrupt the execution
     if (len(times) < 10):

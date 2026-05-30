@@ -1378,7 +1378,7 @@ def measure_eclipses(times, signal, ecl_indices, flags_lrf):
         ecl_mid[m_left] = times[l_i[m_left]]
         ecl_mid[m_right] = times[r_i[m_right]]
     else:
-        ecl_mid, widths, depths, ratios = np.zeros((4, 0), dtype=np.float_)
+        ecl_mid, widths, depths, ratios = np.zeros((4, 0), dtype=np.float64)
     return ecl_mid, widths, depths, ratios
 
 

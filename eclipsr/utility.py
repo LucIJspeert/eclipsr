@@ -407,9 +407,9 @@ def ingest_signal(times, signal, signal_err=None, tess_sectors=True, quality=Non
     signal = signal[sorter]
     signal_err = signal_err[sorter]
     finites = np.isfinite(signal) & np.isfinite(signal_err)
-    times = times[finites].astype(np.float_)
-    signal = signal[finites].astype(np.float_)
-    signal_err = signal_err[finites].astype(np.float_)
+    times = times[finites].astype(np.float64)
+    signal = signal[finites].astype(np.float64)
+    signal_err = signal_err[finites].astype(np.float64)
     
     if (len(times) < 10):
         warnings.warn('given signal does not contain enough finite values.')
